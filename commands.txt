@@ -1,0 +1,8 @@
+joinServer 0
+joinServer 1
+joinServer 2
+killServer 1
+joinServer 3
+stabilize
+createConnection 1 2
+joinClient 4 0
