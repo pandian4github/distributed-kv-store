@@ -34,7 +34,7 @@ func clientTalkToServer() error {
 func main() {
 	args := os.Args
 	if len(args) < 4 {
-		log.Fatal("Starting server needs three arguments: clientId, serverId and basePort")
+		log.Fatal("Starting client needs three arguments: clientId, serverId and basePort")
 	}
 
 	clientId, err := strconv.Atoi(args[1])
