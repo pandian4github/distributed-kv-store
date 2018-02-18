@@ -6,17 +6,55 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"errors"
 )
 
 
 /*
   Attributes of this client
 */
-var serverConn int
+var serverConnPort int
 var clientId int
-var clientBasePort int
+//Need a map from clientId->serverConnPort
 
 var clientWaitGroup sync.WaitGroup
+
+func clientPut(clientId int, key string, value string) error {
+
+	/*
+	get serverConnPort from clientID from map
+	 */
+
+	 if serverConnPort == 0 {
+		 return errors.New("Connection does not exist!")
+	 }
+
+	/*
+	Here goes the code to tell the server to put the key-value pair.
+	*/
+
+	// If successful
+	return nil
+}
+
+func clientGet(clientId int, key string) error {
+	/*
+	get serverConnPort from clientID from map
+	 */
+
+	if serverConnPort == 0 {
+		return errors.New("Connection does not exist!")
+	}
+
+	/*
+	Here goes the code to tell the server to get the value.
+	*/
+
+	// If successful
+	return nil
+}
+
+
 
 func clientListenToMaster() error {
 	defer waitGroup.Done()
