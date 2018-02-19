@@ -32,6 +32,10 @@ var waitGroup sync.WaitGroup
 // Flag which is set during a killServer
 var shutDown = false
 
+// Core data structures which hold the actual data of the key-value store
+var persistedDb = map[string]shared.Value {} // the DB after the last stabilize call
+var inFlightDb = map[string]shared.Value {} // the DB which is not yet stabilized with other server nodes
+
 // From the given command line argument, parse the other server details
 // Format: serverId1@host1:basePort1,serverId2@host2:basePort2,...
 func getOtherServerDetails(str string) error {
@@ -94,6 +98,25 @@ func (t *ServerMaster) CreateConnection(newServer *shared.NewServerArgs, status 
 	hostPortPair := newServer.HostPortPair
 	log.Println("Creating connection between this server", thisServerId, "and server", serverId)
 	otherServers[serverId] = hostPortPair
+	*status = true
+	return nil
+}
+
+func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
+	var printed = map[string]bool {}
+	log.Println("Printing DB contents from server", thisServerId)
+	log.Println("{")
+	for k, v := range inFlightDb {
+		log.Println(k, ":", v.Val)
+		printed[k] = true
+	}
+	for k, v := range persistedDb {
+		if !printed[k] {
+			log.Println(k, ":", v.Val)
+			printed[k] = true
+		}
+	}
+	log.Println("}")
 	*status = true
 	return nil
 }

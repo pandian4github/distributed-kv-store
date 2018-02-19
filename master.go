@@ -57,6 +57,7 @@ const NODE_SERVER = 0
 const NODE_CLIENT = 1
 
 func joinServer(args []string) error {
+	// TODO when a new server is added, it should fetch the persistedDb so far from the other nodes. It should be implemented.
 	serverId, err := strconv.Atoi(args[1])
 	if err != nil {
 		return err
@@ -352,9 +353,22 @@ func printStore(args []string) error {
 		return errors.New("Node with id " + strconv.Itoa(serverId) + " does not exist or is not alive!")
 	}
 
-	/*
-	Here goes the code to tell the particular server to print it's key-value store
-	*/
+	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
+
+	conn, err := util.DialWithRetry(hostPortPair)
+	if err != nil {
+		return err
+	}
+	client := rpc.NewClient(conn)
+
+	log.Println("Printing the DB contents of server", serverId)
+	var reply bool
+	client.Call("ServerMaster.PrintStore", 0, &reply)
+	if reply {
+		log.Println("Successfully printed DB contents of server", serverId)
+	} else {
+		log.Fatal("Reply status is false. PrintStore command failed.")
+	}
 
 	return nil
 }

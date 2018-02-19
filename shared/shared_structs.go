@@ -14,3 +14,13 @@ type NewServerArgs struct {
 type RemoveServerArgs struct {
 	ServerId int
 }
+
+/*
+Value is the struct which encloses the actual value stored in the key-value store
+*/
+type Value struct {
+	Val string // actual value
+	Ts map[int]int // vector timestamp
+	serverId int // server to which the value was written
+	clientId int // client which wrote this value
+}
