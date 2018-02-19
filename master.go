@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"net/rpc"
 	"github.com/pandian4github/distributed-kv-store/shared"
+	"sync"
 )
 
 var functionMap = map[string]func(args []string) error {
@@ -337,28 +338,34 @@ func createConnection(args []string) error {
 	return errors.New("either the nodes are not alive in the system or are not started yet")
 }
 
+func stabilizeAsync(serverId int, waitTillStabilize *sync.WaitGroup) {
+	defer waitTillStabilize.Done()
+
+	client, err := getRpcClient(serverId)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Sending stabilize call to server", serverId)
+	var reply bool
+	client.Call("ServerMaster.Stabilize", 0, &reply)
+
+	if reply {
+		log.Println("Successfully stabilized server", serverId)
+	} else {
+		log.Fatal("reply status is false. Stabilize command failed")
+	}
+}
+
 func stabilize(args []string) error {
+	var waitTillStabilize sync.WaitGroup // thread-safe?
 	for k := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
-			// TODO Implement multi threading here and wait on all threads to complete
-			client, err := getRpcClient(k)
-			if err != nil {
-				return err
-			}
-
-			log.Println("Sending stabilize call to server", k)
-			var reply bool
-			client.Call("ServerMaster.Stabilize", 0, &reply)
-			if reply {
-				log.Println("Successfully stabilized server", k)
-			} else {
-				log.Fatal("Reply status is false. Stabilize command failed.")
-			}
+			waitTillStabilize.Add(1)
+			go stabilizeAsync(k, &waitTillStabilize)
 		}
 	}
-	/*
-	Here goes the code to message all the servers to stabilize
-	*/
+	// Wait till the stabilize completes on all servers
+	waitTillStabilize.Wait()
 	return nil
 }
 

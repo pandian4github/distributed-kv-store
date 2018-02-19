@@ -129,6 +129,8 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	Here goes the logic of doing stabilize
 	*/
 
+	time.Sleep(time.Second * time.Duration(1 + thisServerId))
+
 	*status = true
 	return nil
 }
