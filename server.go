@@ -75,8 +75,8 @@ func (t *ServerMaster) RemoveServer(removeServer *shared.RemoveServerArgs, statu
 	serverId := removeServer.ServerId
 
 	if thisServerId == serverId { // Kill this server
-		log.Println("Marking shutDown flag..")
 		shutDown = true
+		log.Println("Marked shutDown flag..")
 	} else { // Remove the server details from the map
 		log.Println("Removing server", serverId, "from the cluster..")
 		delete(otherServers, serverId)
@@ -164,7 +164,7 @@ func listenToMaster() error {
 			return err
 		}
 		//log.Println("Serving the connection request..")
-		go rpcServer.ServeConn(conn)
+		rpcServer.ServeConn(conn) // synchronous call required?
 		//log.Println("Connection request served. ")
 	}
 

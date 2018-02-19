@@ -181,20 +181,20 @@ func killServer(args []string) error {
 	}
 
 	// HACK - explicitly giving the victim server a RPC call to kill the process
-	client, err := getRpcClient(serverId)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Explicitly killing the server again by a RPC call..")
-	var reply bool
-	removeArgs := &shared.RemoveServerArgs{ServerId:serverId}
-	client.Call("ServerMaster.RemoveServer", removeArgs, &reply)
-	if reply {
-		log.Println("Successfully killed.")
-	} else {
-		log.Fatal("Reply status is false. Kill failed.")
-	}
+	//client, err := getRpcClient(serverId)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//
+	//log.Println("Explicitly killing the server again by a RPC call..")
+	//var reply bool
+	//removeArgs := &shared.RemoveServerArgs{ServerId:serverId}
+	//client.Call("ServerMaster.RemoveServer", removeArgs, &reply)
+	//if reply {
+	//	log.Println("Successfully killed.")
+	//} else {
+	//	log.Fatal("Reply status is false. Kill failed.")
+	//}
 
 	// If server is successfully killed, remove it from active list and portMapping
 	delete(portMapping, serverId)
