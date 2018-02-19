@@ -37,9 +37,15 @@ var waitGroup sync.WaitGroup
 // Flag which is set during a killServer
 var shutDown = false
 
+// Flag to check if data is received from all other servers during a stabilize call
+var dataReceivedFrom = map[int]DB {}
+var numServersReceivedFrom = 0
+
 // Core data structures which hold the actual data of the key-value store
-var persistedDb = map[string]shared.Value {} // the DB after the last stabilize call
-var inFlightDb = map[string]shared.Value {} // the DB which is not yet stabilized with other server nodes
+type DB map[string]shared.Value
+
+var persistedDb = DB {} // the DB after the last stabilize call
+var inFlightDb = DB {} // the DB which is not yet stabilized with other server nodes
 
 func getServerRpcClient(serverId int) (*rpc.Client, error) {
 	if client, ok := serverRpcClientMap[serverId]; ok {
@@ -150,15 +156,66 @@ func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
 	return nil
 }
 
+func collateAndResolveConflicts() error {
+	/*
+		TODO collate all the inflight DBs, resolve conflicts and persist to persistedDB
+	*/
+	return nil
+}
+
 func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	log.Println("Stabilize call received from master..")
 
-	/*
-	TODO
-	Here goes the logic of doing stabilize
-	*/
+	defer func() {
+		// Resetting the flags and count at the end of stabilize
+		numServersReceivedFrom = 0
+		dataReceivedFrom = make(map[int]DB)
 
-	time.Sleep(time.Second * time.Duration(1 + thisServerId))
+	}()
+
+
+	// First send this server's inFlightData to the other servers
+	for serverId := range otherServers {
+		client, err := getServerRpcClient(serverId)
+		if err != nil {
+			return err
+		}
+
+		log.Println("Sending inFlightData to server", serverId)
+		var args = shared.StabilizeDbRequest{ServerId:thisServerId, InFlightDB:inFlightDb}
+		var reply bool
+		client.Call("ServerServer.SendInFlightData", &args, &reply)
+		if reply {
+			log.Println("Successfully sent inFlightData to server", serverId)
+		} else {
+			log.Println("ERROR: Return status is false while sending inFlightData to server", serverId)
+		}
+	}
+
+	// Now, wait until all other servers have sent their inFlightDbs to this server
+	retryTimeSecs := 0.5
+	retryLimit := 20
+	retryAttempt := 0
+	numOtherServers := len(otherServers)
+
+	for {
+		if numServersReceivedFrom >= numOtherServers {
+			break
+		}
+		time.Sleep(time.Second * time.Duration(retryTimeSecs))
+		retryAttempt++
+		if retryAttempt >= retryLimit {
+			return errors.New("did not get the updates from all the servers after " + strconv.Itoa(retryLimit) + " retries")
+		}
+	}
+
+	// Received updates from all other servers, now collate them and store to persistedDb and clear inFlightDb
+	err := collateAndResolveConflicts()
+	if err != nil {
+		return err
+	}
+
+	//time.Sleep(time.Second * time.Duration(1 + thisServerId))
 
 	*status = true
 	return nil
@@ -211,6 +268,21 @@ func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataRe
 	for k, v := range persistedDb {
 		response.PersistedDb[k] = v
 	}
+	return nil
+}
+
+func (t *ServerServer) SendInFlightData(request *shared.StabilizeDbRequest, reply *bool) error {
+	serverId := request.ServerId
+
+	if _, ok := dataReceivedFrom[serverId]; !ok {
+		dataReceivedFrom[serverId] = DB {}
+		for k, v := range request.InFlightDB {
+			dataReceivedFrom[serverId][k] = v
+		}
+		numServersReceivedFrom++
+	}
+
+	*reply = true
 	return nil
 }
 
@@ -291,7 +363,6 @@ func bootstrapFromServer(serverId int) error {
 	}
 	log.Println("Bootstrap complete. Fetched", len(persistedDb), "key-value pairs from server", serverId)
 	return nil
-
 }
 
 func bootstrapData() error {

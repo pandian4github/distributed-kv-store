@@ -28,3 +28,8 @@ type Value struct {
 type BootstrapDataResponse struct {
 	PersistedDb map[string]Value
 }
+
+type StabilizeDbRequest struct {
+	ServerId int
+	InFlightDB map[string]Value
+}
