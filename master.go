@@ -218,6 +218,56 @@ func joinClient(args []string) error {
 	return nil
 }
 
+/*
+Remove s2 information from s1 server
+*/
+func removeConnectionBetweenServers(s1 int, s2 int) error {
+	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[s1])
+
+	conn, err := util.DialWithRetry(hostPortPair)
+	if err != nil {
+		return err
+	}
+	client := rpc.NewClient(conn)
+
+	log.Println("Removing server information of", s2, "from server", s1)
+	var reply bool
+	args := &shared.RemoveServerArgs{ServerId:s2}
+	client.Call("ServerMaster.BreakConnection", args, &reply)
+	if reply {
+		log.Println("Successfully removed connection of", s2, "from", s1)
+	} else {
+		log.Fatal("Reply status is false. Break connection failed.")
+	}
+
+	return nil
+}
+
+/*
+Add s2 information to s1 server
+*/
+func addConnectionBetweenServers(s1 int, s2 int) error {
+	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[s1])
+
+	conn, err := util.DialWithRetry(hostPortPair)
+	if err != nil {
+		return err
+	}
+	client := rpc.NewClient(conn)
+
+	log.Println("Adding server information of", s2, "to server", s1)
+	var reply bool
+	args := &shared.NewServerArgs{ServerId:s2, HostPortPair:LOCALHOST_PREFIX + strconv.Itoa(portMapping[s2])}
+	client.Call("ServerMaster.CreateConnection", args, &reply)
+	if reply {
+		log.Println("Successfully added connection of", s2, "to", s1)
+	} else {
+		log.Fatal("Reply status is false. Create connection failed.")
+	}
+
+	return nil
+}
+
 func breakConnection(args []string) error {
 	nodeId1, err := strconv.Atoi(args[1])
 	if err != nil {
@@ -235,10 +285,13 @@ func breakConnection(args []string) error {
 				if nodeType[nodeId1] == NODE_CLIENT && nodeType[nodeId2] == NODE_CLIENT {
 					return errors.New("cannot break connection between two clients")
 				}
-				/*
-				Here goes the code to break the connection between two servers or between
-				a server and a client.
-				*/
+
+				if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
+					removeConnectionBetweenServers(nodeId1, nodeId2)
+					removeConnectionBetweenServers(nodeId2, nodeId1)
+				} else { // connection between a server and a client
+					// TODO corresponding call to client
+				}
 
 				// If successful
 				return nil
@@ -265,10 +318,13 @@ func createConnection(args []string) error {
 				if nodeType[nodeId1] == NODE_CLIENT && nodeType[nodeId2] == NODE_CLIENT {
 					return errors.New("cannot create connection between two clients")
 				}
-				/*
-				Here goes the code to create the connection between two servers or between
-				a server and a client.
-				*/
+
+				if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
+					addConnectionBetweenServers(nodeId1, nodeId2)
+					addConnectionBetweenServers(nodeId2, nodeId1)
+				} else { // connection between a server and a client
+					// TODO corresponding call to client
+				}
 
 				// If successful
 				return nil

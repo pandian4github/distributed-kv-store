@@ -81,6 +81,23 @@ func (t *ServerMaster) RemoveServer(removeServer *shared.RemoveServerArgs, statu
 	return nil
 }
 
+func (t *ServerMaster) BreakConnection(removeServer *shared.RemoveServerArgs, status *bool) error {
+	serverId := removeServer.ServerId
+	log.Println("Breaking connection between this server", thisServerId, "and server", serverId)
+	delete(otherServers, serverId)
+	*status = true
+	return nil
+}
+
+func (t *ServerMaster) CreateConnection(newServer *shared.NewServerArgs, status *bool) error {
+	serverId := newServer.ServerId
+	hostPortPair := newServer.HostPortPair
+	log.Println("Creating connection between this server", thisServerId, "and server", serverId)
+	otherServers[serverId] = hostPortPair
+	*status = true
+	return nil
+}
+
 func listenToMaster() error {
 	defer waitGroup.Done()
 	portToListen := thisBasePort
