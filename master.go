@@ -10,6 +10,8 @@ import (
 	"errors"
 	"github.com/pandian4github/distributed-kv-store/util"
 	"os/exec"
+	"net/rpc"
+	"github.com/pandian4github/distributed-kv-store/shared"
 )
 
 var functionMap = map[string]func(args []string) error {
@@ -35,6 +37,8 @@ var numArgsMap = map[string]int {
 	"put": 3,
 	"get": 2,
 }
+
+const LOCALHOST_PREFIX = "localhost:"
 
 // Starting from 5001, the servers and clients are made to listen on different ports
 var portsUsed = 5001
@@ -66,6 +70,7 @@ func joinServer(args []string) error {
 	portsUsed += 3 // since server listens on three different threads
 	portMapping[serverId] = basePort
 	nodeType[serverId] = NODE_SERVER
+	hostBasePortPair := LOCALHOST_PREFIX + strconv.Itoa(basePort)
 
 	// Fetch the other server details from global portMapping (which includes both server and client)
 	// map of serverId to host:port
@@ -74,7 +79,7 @@ func joinServer(args []string) error {
 	for k, v := range portMapping {
 		if nodeType, ok := nodeType[k]; ok {
 			if nodeType == NODE_SERVER && k != serverId {
-				otherServers[k] = "127.0.0.1:" + strconv.Itoa(v)
+				otherServers[k] = LOCALHOST_PREFIX + strconv.Itoa(v)
 			}
 		}
 	}
@@ -105,6 +110,27 @@ func joinServer(args []string) error {
 	/*
 	TODO: Notify other servers about this new server added using RPC calls.
 	 */
+	for k, v := range otherServers {
+		otherServerId := k
+		otherServerHostPortPair := v
+		log.Println(k, v)
+
+		conn, err := util.DialWithRetry(otherServerHostPortPair)
+		if err != nil {
+			log.Fatal(err)
+		}
+		client := rpc.NewClient(conn)
+
+		log.Println("Broadcasting the new server information to the server", otherServerId)
+		var reply bool
+		args := &shared.NewServerArgs{ServerId:serverId, HostPortPair:hostBasePortPair}
+		client.Call("ServerMaster.AddNewServer", args, &reply)
+		if reply {
+			log.Println("Successfully broadcasted.")
+		} else {
+			log.Fatal("Reply status is false. Broadcast failed.")
+		}
+	}
 
 	return nil
 
@@ -318,6 +344,7 @@ func main() {
 			log.Println("Error: unknown command to the key-value store", parts[0])
 		}
 		log.Println("Execution over for command:", line)
+		log.Println("------------------------------------------------------------")
 	}
 
 	if err := scanner.Err(); err != nil {

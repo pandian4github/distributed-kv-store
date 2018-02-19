@@ -6,7 +6,12 @@ import (
 	"strconv"
 	"strings"
 	"errors"
+	"net"
+	"time"
+	"log"
 )
+
+var retryTimes = []float32{0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5}
 
 const (
 	HAPPENED_BEFORE = 0
@@ -105,6 +110,22 @@ func DecodeMapIntStringFromStringCustom(str string) (map[int]string, error) {
 		mp[key] = subParts[1]
 	}
 	return mp, nil
+}
+
+func DialWithRetry(hostPortPair string) (net.Conn, error) {
+	numRetries := len(retryTimes)
+	var conn net.Conn
+	var err error
+	for i := 0; i < numRetries; i++ {
+		conn, err = net.Dial("tcp", hostPortPair)
+		if err != nil {
+			log.Println("Unable to connect due to", err, "Waiting for", retryTimes[i], "seconds before retrying..")
+			time.Sleep(time.Second * time.Duration(retryTimes[i]))
+			continue
+		}
+		return conn, nil
+	}
+	return conn, err
 }
 
 /*

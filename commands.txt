@@ -1,5 +1,3 @@
 joinServer 0
 joinServer 1
 joinServer 2
-joinServer 3
-joinServer 4

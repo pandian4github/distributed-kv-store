@@ -7,6 +7,9 @@ import (
 	"strings"
 	"errors"
 	"sync"
+	"github.com/pandian4github/distributed-kv-store/shared"
+	"net/rpc"
+	"net"
 )
 
 /*
@@ -17,7 +20,7 @@ import (
    basePort + 2 - listens to clients (to execute commands)
 */
 var thisServerId int
-var basePort int
+var thisBasePort int
 
 // Maps serverId to host:basePort of that server
 var otherServers = map[int]string {}
@@ -47,12 +50,44 @@ func getOtherServerDetails(str string) error {
 	return nil
 }
 
-func listenToMaster() error {
-	defer waitGroup.Done()
-	//portToListen := basePort
-
+/*
+Implementation of different RPC methods exported by server to master
+*/
+type ServerMaster int
+func (t *ServerMaster) AddNewServer(newServer *shared.NewServerArgs, status *bool) error {
+	newServerId := newServer.ServerId
+	hostPortPair := newServer.HostPortPair
+	otherServers[newServerId] = hostPortPair
+	*status = true
+	log.Println("thisServerId:", thisServerId, "Added new server", newServerId)
 	return nil
 }
+
+func listenToMaster() error {
+	defer waitGroup.Done()
+	portToListen := thisBasePort
+
+	serverMaster := new(ServerMaster)
+	rpcServer := rpc.NewServer()
+	log.Println("Registering ServerMaster..")
+	rpcServer.RegisterName("ServerMaster", serverMaster)
+
+	log.Println("Listening to port", portToListen)
+	l, e := net.Listen("tcp", "localhost:" + strconv.Itoa(portToListen))
+	if e != nil {
+		log.Fatal(e)
+	}
+
+	log.Println("Accepting connections from the listener in address", l.Addr())
+	rpcServer.Accept(l)
+	log.Println("Returning..")
+	return nil
+}
+
+
+/*
+Implementation of different RPC methods exported by server to other servers
+*/
 
 func listenToServers() error {
 	defer waitGroup.Done()
@@ -60,6 +95,10 @@ func listenToServers() error {
 
 	return nil
 }
+
+/*
+Implementation of different RPC methods exported by server to clients
+*/
 
 func listenToClients() error {
 	defer waitGroup.Done()
@@ -105,6 +144,7 @@ func main() {
 
 	log.Println("other server details:", otherServers)
 	thisServerId = serverId
+	thisBasePort = basePort
 
 	// since we are starting three threads
 	waitGroup.Add(4)
