@@ -121,6 +121,18 @@ func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
 	return nil
 }
 
+func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
+	log.Println("Stabilize call received from master..")
+
+	/*
+	TODO
+	Here goes the logic of doing stabilize
+	*/
+
+	*status = true
+	return nil
+}
+
 func listenToMaster() error {
 	defer waitGroup.Done()
 	portToListen := thisBasePort

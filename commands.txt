@@ -6,6 +6,7 @@ breakConnection 1 2
 createConnection 1 0
 printStore 2
 printStore 0
+stabilize
 killServer 0
 killServer 1
 killServer 2

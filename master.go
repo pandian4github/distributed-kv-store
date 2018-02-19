@@ -336,6 +336,28 @@ func createConnection(args []string) error {
 }
 
 func stabilize(args []string) error {
+	for k, v := range portMapping {
+		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
+			hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(v)
+
+			// TODO Implement multi threading here and wait on all threads to complete
+			conn, err := util.DialWithRetry(hostPortPair)
+			if err != nil {
+				return err
+			}
+			client := rpc.NewClient(conn)
+
+			log.Println("Sending stabilize call to server", k)
+			var reply bool
+			client.Call("ServerMaster.Stabilize", 0, &reply)
+			if reply {
+				log.Println("Successfully stabilized server", k)
+			} else {
+				log.Fatal("Reply status is false. Stabilize command failed.")
+			}
+		}
+
+	}
 	/*
 	Here goes the code to message all the servers to stabilize
 	*/
