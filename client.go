@@ -10,6 +10,7 @@ import (
 	"net/rpc"
 	"net"
 	"strings"
+	"github.com/pandian4github/distributed-kv-store/util"
 )
 
 
@@ -20,7 +21,7 @@ var serverConn int
 var serverBasePort int
 var clientBasePort int
 var clientId int
-var clientServerConnection rpc.Client
+var clientServerConnection net.Conn
 var clientMasterConnection rpc.Server
 //Need a map from clientId->serverConnPort
 
@@ -43,16 +44,17 @@ func (t *ClientMaster) clientPut(clientId int, key string, value string) error {
 	/*
 	get serverId from clientId from map in master
 	get serverBasePort from serverId from map in master
-	 */
+	*/
 
-	 if serverConn == 0 {
-		 return errors.New("Connection does not exist!")
-	 }
+	if serverConn == 0 {
+		return errors.New("connection does not exist")
+	}
 
-	 args := &PutArgs{key, value, clientId, serverId}
-	 var reply int
+ 	args := &PutArgs{key, value, clientId, serverConn}
+ 	var reply int
 
-	clientServerConnection.Call("ClientServer.serverPut", args, &reply)
+	client := rpc.NewClient(clientServerConnection)
+	err := client.Call("ClientServer.ServerPut", args, &reply)
 
 	if err != nil {
 		fmt.Println(err)
@@ -72,13 +74,15 @@ func (t *ClientMaster) clientGet(clientId int, key string) error {
 	 */
 
 	if serverConn == 0 {
-		return errors.New("Connection does not exist!")
+		return errors.New("connection does not exist")
 	}
 
 	args := &GetArgs{key}
 	var reply string
 
-	clientServerConnection.Call("ClientServer.serverGet", args, &reply)
+	client := rpc.NewClient(clientServerConnection)
+	err := client.Call("ClientServer.ServerGet", args, &reply)
+	defer client.Close()
 
 	if err != nil {
 		fmt.Println(err)
@@ -89,8 +93,6 @@ func (t *ClientMaster) clientGet(clientId int, key string) error {
 	// If successful
 	return nil
 }
-
-
 
 func clientListenToMaster() error {
 	defer waitGroup.Done()
@@ -119,11 +121,14 @@ func clientListenToMaster() error {
 func clientTalkToServer() error {
 	defer waitGroup.Done()
 
-	portToTalk := serverBasePort+2
-	portToTalkStr := "host:"
-	portToTalkStr = portToTalkStr + strconv.Itoa(portToTalk)
+	portToTalk := serverBasePort + 2
+	hostPortPair := util.LOCALHOST_PREFIX
+	hostPortPair = hostPortPair + strconv.Itoa(portToTalk)
 
-	clientServerConnection, err := rpc.Dial("tcp", portToTalkStr)
+	var err error
+
+	clientServerConnection, err = util.DialWithRetry(hostPortPair)
+
 	if err != nil {
 		fmt.Println(err)
 		return err

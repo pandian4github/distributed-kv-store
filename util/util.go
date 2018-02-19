@@ -12,6 +12,7 @@ import (
 )
 
 var retryTimes = []float32{0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5}
+const LOCALHOST_PREFIX = "localhost:"
 
 const (
 	HAPPENED_BEFORE = 0

@@ -38,8 +38,6 @@ var numArgsMap = map[string]int {
 	"get": 2,
 }
 
-const LOCALHOST_PREFIX = "localhost:"
-
 // Starting from 5001, the servers and clients are made to listen on different ports
 var portsUsed = 5001
 
@@ -71,7 +69,7 @@ func joinServer(args []string) error {
 	portsUsed += 3 // since server listens on three different threads
 	portMapping[serverId] = basePort
 	nodeType[serverId] = NODE_SERVER
-	hostBasePortPair := LOCALHOST_PREFIX + strconv.Itoa(basePort)
+	hostBasePortPair := util.LOCALHOST_PREFIX + strconv.Itoa(basePort)
 
 	// Fetch the other server details from global portMapping (which includes both server and client)
 	// map of serverId to host:port
@@ -80,7 +78,7 @@ func joinServer(args []string) error {
 	for k, v := range portMapping {
 		if nodeType, ok := nodeType[k]; ok {
 			if nodeType == NODE_SERVER && k != serverId {
-				otherServers[k] = LOCALHOST_PREFIX + strconv.Itoa(v)
+				otherServers[k] = util.LOCALHOST_PREFIX + strconv.Itoa(v)
 			}
 		}
 	}
@@ -145,7 +143,7 @@ func killServer(args []string) error {
 
 	for k, v := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
-			hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(v)
+			hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(v)
 
 			conn, err := util.DialWithRetry(hostPortPair)
 			if err != nil {
@@ -166,7 +164,7 @@ func killServer(args []string) error {
 	}
 
 	// HACK - explicitly giving the victim server a RPC call to kill the process
-	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
+	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
 	conn, err := util.DialWithRetry(hostPortPair)
 	if err != nil {
 		log.Fatal(err)
@@ -338,7 +336,7 @@ func createConnection(args []string) error {
 func stabilize(args []string) error {
 	for k, v := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
-			hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(v)
+			hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(v)
 
 			// TODO Implement multi threading here and wait on all threads to complete
 			conn, err := util.DialWithRetry(hostPortPair)
@@ -375,7 +373,7 @@ func printStore(args []string) error {
 		return errors.New("Node with id " + strconv.Itoa(serverId) + " does not exist or is not alive!")
 	}
 
-	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
+	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
 
 	conn, err := util.DialWithRetry(hostPortPair)
 	if err != nil {
