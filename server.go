@@ -11,6 +11,8 @@ import (
 	"net/rpc"
 	"net"
 	"time"
+	"github.com/pandian4github/distributed-kv-store/util"
+	"math/rand"
 )
 
 /*
@@ -26,6 +28,9 @@ var thisBasePort int
 // Maps serverId to host:basePort of that server
 var otherServers = map[int]string {}
 
+// Maintains a map of open connections to the other servers
+var serverRpcClientMap = map[int]*rpc.Client {}
+
 // To wait for all threads to complete before exiting
 var waitGroup sync.WaitGroup
 
@@ -35,6 +40,30 @@ var shutDown = false
 // Core data structures which hold the actual data of the key-value store
 var persistedDb = map[string]shared.Value {} // the DB after the last stabilize call
 var inFlightDb = map[string]shared.Value {} // the DB which is not yet stabilized with other server nodes
+
+func getServerRpcClient(serverId int) (*rpc.Client, error) {
+	if client, ok := serverRpcClientMap[serverId]; ok {
+		return client, nil
+	}
+	if hostBasePortPair, ok := otherServers[serverId]; ok {
+		basePortStr := strings.Split(hostBasePortPair,  ":")[1]
+		basePort, err := strconv.Atoi(basePortStr)
+		if err != nil {
+			return nil, err
+		}
+		portToConnect := basePort + 1
+		hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portToConnect)
+		conn, err := util.DialWithRetry(hostPortPair)
+		if err != nil {
+			return nil, err
+		}
+		client := rpc.NewClient(conn)
+		serverRpcClientMap[serverId] = client
+		return client, nil
+	} else {
+		return nil, errors.New("port information not found for the server " + strconv.Itoa(serverId))
+	}
+}
 
 // From the given command line argument, parse the other server details
 // Format: serverId1@host1:basePort1,serverId2@host2:basePort2,...
@@ -144,7 +173,7 @@ func listenToMaster() error {
 	log.Println("Registering ServerMaster..")
 	rpcServer.RegisterName("ServerMaster", serverMaster)
 
-	log.Println("Listening to port", portToListen)
+	log.Println("Listening to master on port", portToListen)
 	l, e := net.Listen("tcp", "localhost:" + strconv.Itoa(portToListen))
 	if e != nil {
 		log.Fatal(e)
@@ -156,7 +185,7 @@ func listenToMaster() error {
 	for {
 		if shutDown {
 			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
-			log.Println("Shutting down the server..")
+			log.Println("Shutting down listen to master thread..")
 			break
 		}
 		log.Println("Listening to connection from the master..")
@@ -173,14 +202,52 @@ func listenToMaster() error {
 	return nil
 }
 
-
 /*
 Implementation of different RPC methods exported by server to other servers
 */
+type ServerServer int
+func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataResponse) error {
+	response.PersistedDb = map[string]shared.Value {}
+	for k, v := range persistedDb {
+		response.PersistedDb[k] = v
+	}
+	return nil
+}
 
 func listenToServers() error {
 	defer waitGroup.Done()
-	//portToListen := basePort + 1
+	portToListen := thisBasePort + 1
+
+	serverServer := new(ServerServer)
+	rpcServer := rpc.NewServer()
+	log.Println("Registering ServerServer..")
+	rpcServer.RegisterName("ServerServer", serverServer)
+
+	log.Println("Listening to servers on port", portToListen)
+	l, e := net.Listen("tcp", util.LOCALHOST_PREFIX + strconv.Itoa(portToListen))
+	if e != nil {
+		log.Fatal(e)
+	}
+	defer l.Close()
+
+	log.Println("Accepting connections from the listener in address", l.Addr())
+
+	for {
+		if shutDown {
+			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			log.Println("Shutting down listen to servers thread..")
+			break
+		}
+		log.Println("Listening to connection from the servers..")
+		conn, err := l.Accept()
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		//log.Println("Serving the connection request..")
+		rpcServer.ServeConn(conn) // synchronous call required?
+		//log.Println("Connection request served. ")
+	}
 
 	return nil
 }
@@ -210,6 +277,42 @@ func talkToServers() error {
 	}
 }*/
 
+func bootstrapFromServer(serverId int) error {
+	client, err := getServerRpcClient(serverId)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Getting bootstrap data from server", serverId)
+	var reply shared.BootstrapDataResponse
+	client.Call("ServerServer.BootstrapData", 0, &reply)
+	for k, v := range reply.PersistedDb {
+		persistedDb[k] = v
+	}
+	log.Println("Bootstrap complete. Fetched", len(persistedDb), "key-value pairs from server", serverId)
+	return nil
+
+}
+
+func bootstrapData() error {
+	numOtherServers := len(otherServers)
+	if numOtherServers == 0 {
+		log.Println("No other servers found to bootstrap data..")
+		return nil
+	}
+	r := rand.Int() % numOtherServers
+	serverToBootstrapFrom := -1
+	for k := range otherServers {
+		if r == 0 {
+			serverToBootstrapFrom = k
+			break
+		}
+		r--
+	}
+	err := bootstrapFromServer(serverToBootstrapFrom)
+	return err
+}
+
 func main() {
 	args := os.Args
 	if len(args) < 3 {
@@ -234,6 +337,11 @@ func main() {
 	log.Println("other server details:", otherServers)
 	thisServerId = serverId
 	thisBasePort = basePort
+
+	err = bootstrapData()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// since we are starting three threads
 	waitGroup.Add(4)

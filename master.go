@@ -52,14 +52,14 @@ var portMapping = map[int]int {}
 var nodeType = map[int]int {}
 
 // Maintains a map of open connections to different servers and clients
-var rpcClientMap = map[int]*rpc.Client {}
+var masterRpcClientMap = map[int]*rpc.Client {}
 
 // To distinguish between a server and a client node
 const NODE_SERVER = 0
 const NODE_CLIENT = 1
 
-func getRpcClient(nodeId int) (*rpc.Client, error) {
-	if client, ok := rpcClientMap[nodeId]; ok {
+func getMasterRpcClient(nodeId int) (*rpc.Client, error) {
+	if client, ok := masterRpcClientMap[nodeId]; ok {
 		return client, nil
 	}
 
@@ -69,12 +69,12 @@ func getRpcClient(nodeId int) (*rpc.Client, error) {
 		return nil, err
 	}
 	client := rpc.NewClient(conn)
-	rpcClientMap[nodeId] = client
+	masterRpcClientMap[nodeId] = client
 	return client, nil
 }
 
 func closeAllClients() error {
-	for nodeId, client := range rpcClientMap {
+	for nodeId, client := range masterRpcClientMap {
 		log.Println("Closing RPC client to nodeId", nodeId)
 		client.Close()
 	}
@@ -137,7 +137,7 @@ func joinServer(args []string) error {
 	TODO: Notify other servers about this new server added using RPC calls.
 	 */
 	for k := range otherServers {
-		client, err := getRpcClient(k)
+		client, err := getMasterRpcClient(k)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -164,7 +164,7 @@ func killServer(args []string) error {
 
 	for k := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
-			client, err := getRpcClient(k)
+			client, err := getMasterRpcClient(k)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -182,7 +182,7 @@ func killServer(args []string) error {
 	}
 
 	// HACK - explicitly giving the victim server a RPC call to kill the process
-	//client, err := getRpcClient(serverId)
+	//client, err := getMasterRpcClient(serverId)
 	//if err != nil {
 	//	log.Fatal(err)
 	//}
@@ -237,7 +237,7 @@ func joinClient(args []string) error {
 Remove s2 information from s1 server
 */
 func removeConnectionBetweenServers(s1 int, s2 int) error {
-	client, err := getRpcClient(s1)
+	client, err := getMasterRpcClient(s1)
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func removeConnectionBetweenServers(s1 int, s2 int) error {
 Add s2 information to s1 server
 */
 func addConnectionBetweenServers(s1 int, s2 int) error {
-	client, err := getRpcClient(s1)
+	client, err := getMasterRpcClient(s1)
 	if err != nil {
 		return err
 	}
@@ -341,7 +341,7 @@ func createConnection(args []string) error {
 func stabilizeAsync(serverId int, waitTillStabilize *sync.WaitGroup) {
 	defer waitTillStabilize.Done()
 
-	client, err := getRpcClient(serverId)
+	client, err := getMasterRpcClient(serverId)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func printStore(args []string) error {
 			" does not exist or is not alive!")
 	}
 
-	client, err := getRpcClient(serverId)
+	client, err := getMasterRpcClient(serverId)
 	if err != nil {
 		return err
 	}

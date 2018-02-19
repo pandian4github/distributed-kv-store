@@ -24,3 +24,7 @@ type Value struct {
 	serverId int // server to which the value was written
 	clientId int // client which wrote this value
 }
+
+type BootstrapDataResponse struct {
+	PersistedDb map[string]Value
+}
