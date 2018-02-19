@@ -26,10 +26,14 @@ type Value struct {
 }
 
 type BootstrapDataResponse struct {
+	VecTs Clock // clock time of that server
 	PersistedDb map[string]Value
 }
 
 type StabilizeDbRequest struct {
 	ServerId int
+	VecTs Clock
 	InFlightDB map[string]Value
 }
+
+type Clock map[int]int

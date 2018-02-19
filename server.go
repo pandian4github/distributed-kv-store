@@ -25,6 +25,8 @@ import (
 var thisServerId int
 var thisBasePort int
 
+var thisVecTs = shared.Clock {}
+
 // Maps serverId to host:basePort of that server
 var otherServers = map[int]string {}
 
@@ -182,7 +184,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 		}
 
 		log.Println("Sending inFlightData to server", serverId)
-		var args = shared.StabilizeDbRequest{ServerId:thisServerId, InFlightDB:inFlightDb}
+		var args = shared.StabilizeDbRequest{ServerId:thisServerId, InFlightDB:inFlightDb, VecTs:thisVecTs}
 		var reply bool
 		client.Call("ServerServer.SendInFlightData", &args, &reply)
 		if reply {
@@ -268,6 +270,9 @@ func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataRe
 	for k, v := range persistedDb {
 		response.PersistedDb[k] = v
 	}
+	for k, v := range thisVecTs {
+		response.VecTs[k] = v
+	}
 	return nil
 }
 
@@ -349,6 +354,10 @@ func talkToServers() error {
 	}
 }*/
 
+func incrementMyClock() {
+	thisVecTs[thisServerId]++
+}
+
 func bootstrapFromServer(serverId int) error {
 	client, err := getServerRpcClient(serverId)
 	if err != nil {
@@ -361,6 +370,13 @@ func bootstrapFromServer(serverId int) error {
 	for k, v := range reply.PersistedDb {
 		persistedDb[k] = v
 	}
+	for k, v := range reply.VecTs {
+		if v > thisVecTs[k] {
+			thisVecTs[k] = v
+		}
+	}
+	incrementMyClock()
+
 	log.Println("Bootstrap complete. Fetched", len(persistedDb), "key-value pairs from server", serverId)
 	return nil
 }
@@ -382,6 +398,10 @@ func bootstrapData() error {
 	}
 	err := bootstrapFromServer(serverToBootstrapFrom)
 	return err
+}
+
+func initializeClock() {
+	thisVecTs[thisServerId] = 1 // or, 0
 }
 
 func main() {
@@ -408,6 +428,8 @@ func main() {
 	log.Println("other server details:", otherServers)
 	thisServerId = serverId
 	thisBasePort = basePort
+
+	initializeClock()
 
 	err = bootstrapData()
 	if err != nil {
