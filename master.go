@@ -45,14 +45,40 @@ var portsUsed = 5001
 var portMapping = map[int]int {}
 
 // Maintains if a server/client is active or not
-var isNodeAlive = map[int]bool {}
+//var isNodeAlive = map[int]bool {}
 
 // Whether the node is a server or client (0 for server and 1 for client)
 var nodeType = map[int]int {}
 
+// Maintains a map of open connections to different servers and clients
+var rpcClientMap = map[int]*rpc.Client {}
+
 // To distinguish between a server and a client node
 const NODE_SERVER = 0
 const NODE_CLIENT = 1
+
+func getRpcClient(nodeId int) (*rpc.Client, error) {
+	if client, ok := rpcClientMap[nodeId]; ok {
+		return client, nil
+	}
+
+	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portMapping[nodeId])
+	conn, err := util.DialWithRetry(hostPortPair)
+	if err != nil {
+		return nil, err
+	}
+	client := rpc.NewClient(conn)
+	rpcClientMap[nodeId] = client
+	return client, nil
+}
+
+func closeAllClients() error {
+	for nodeId, client := range rpcClientMap {
+		log.Println("Closing RPC client to nodeId", nodeId)
+		client.Close()
+	}
+	return nil
+}
 
 func joinServer(args []string) error {
 	// TODO when a new server is added, it should fetch the persistedDb so far from the other nodes. It should be implemented.
@@ -61,7 +87,7 @@ func joinServer(args []string) error {
 		return err
 	}
 	// If the node with this id is already alive in the system
-	if nodeAlive, ok := isNodeAlive[serverId]; ok && nodeAlive {
+	if _, ok := portMapping[serverId]; ok {
 		return errors.New("Node with id " + strconv.Itoa(serverId) + " is already alive!")
 	}
 
@@ -104,22 +130,18 @@ func joinServer(args []string) error {
 
 	cmd.Start()
 
-	isNodeAlive[serverId] = true
+	//isNodeAlive[serverId] = true
 
 	/*
 	TODO: Notify other servers about this new server added using RPC calls.
 	 */
-	for k, v := range otherServers {
-		otherServerId := k
-		otherServerHostPortPair := v
-
-		conn, err := util.DialWithRetry(otherServerHostPortPair)
+	for k := range otherServers {
+		client, err := getRpcClient(k)
 		if err != nil {
 			log.Fatal(err)
 		}
-		client := rpc.NewClient(conn)
 
-		log.Println("Broadcasting the new server information to the server", otherServerId)
+		log.Println("Broadcasting the new server information to the server", k)
 		var reply bool
 		args := &shared.NewServerArgs{ServerId:serverId, HostPortPair:hostBasePortPair}
 		client.Call("ServerMaster.AddNewServer", args, &reply)
@@ -128,11 +150,9 @@ func joinServer(args []string) error {
 		} else {
 			log.Fatal("Reply status is false. Broadcast failed.")
 		}
-		conn.Close()
 	}
 
 	return nil
-
 }
 
 func killServer(args []string) error {
@@ -141,15 +161,12 @@ func killServer(args []string) error {
 		return err
 	}
 
-	for k, v := range portMapping {
+	for k := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
-			hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(v)
-
-			conn, err := util.DialWithRetry(hostPortPair)
+			client, err := getRpcClient(k)
 			if err != nil {
 				log.Fatal(err)
 			}
-			client := rpc.NewClient(conn)
 
 			log.Println("Broadcasting the server information to remove to the server", k)
 			var reply bool
@@ -164,12 +181,10 @@ func killServer(args []string) error {
 	}
 
 	// HACK - explicitly giving the victim server a RPC call to kill the process
-	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
-	conn, err := util.DialWithRetry(hostPortPair)
+	client, err := getRpcClient(serverId)
 	if err != nil {
 		log.Fatal(err)
 	}
-	client := rpc.NewClient(conn)
 
 	log.Println("Explicitly killing the server again by a RPC call..")
 	var reply bool
@@ -183,7 +198,7 @@ func killServer(args []string) error {
 
 	// If server is successfully killed, remove it from active list and portMapping
 	delete(portMapping, serverId)
-	isNodeAlive[serverId] = false
+	//isNodeAlive[serverId] = false
 
 	return nil
 }
@@ -199,7 +214,7 @@ func joinClient(args []string) error {
 	}
 
 	// If the node with this id is already alive in the system
-	if nodeAlive, ok := isNodeAlive[clientId]; ok && nodeAlive {
+	if _, ok := portMapping[clientId]; ok {
 		return errors.New("Node with id " + strconv.Itoa(serverId) + " is already alive!")
 	}
 
@@ -212,7 +227,7 @@ func joinClient(args []string) error {
 	Here goes the code to start a client with the basePort and serverId as the parameters.
 	*/
 
-	isNodeAlive[clientId] = true
+	//isNodeAlive[clientId] = true
 
 	return nil
 }
@@ -221,13 +236,10 @@ func joinClient(args []string) error {
 Remove s2 information from s1 server
 */
 func removeConnectionBetweenServers(s1 int, s2 int) error {
-	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[s1])
-
-	conn, err := util.DialWithRetry(hostPortPair)
+	client, err := getRpcClient(s1)
 	if err != nil {
 		return err
 	}
-	client := rpc.NewClient(conn)
 
 	log.Println("Removing server information of", s2, "from server", s1)
 	var reply bool
@@ -246,17 +258,15 @@ func removeConnectionBetweenServers(s1 int, s2 int) error {
 Add s2 information to s1 server
 */
 func addConnectionBetweenServers(s1 int, s2 int) error {
-	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[s1])
-
-	conn, err := util.DialWithRetry(hostPortPair)
+	client, err := getRpcClient(s1)
 	if err != nil {
 		return err
 	}
-	client := rpc.NewClient(conn)
 
 	log.Println("Adding server information of", s2, "to server", s1)
 	var reply bool
-	args := &shared.NewServerArgs{ServerId:s2, HostPortPair:LOCALHOST_PREFIX + strconv.Itoa(portMapping[s2])}
+	args := &shared.NewServerArgs{ServerId:s2, HostPortPair:util.LOCALHOST_PREFIX +
+		strconv.Itoa(portMapping[s2])}
 	client.Call("ServerMaster.CreateConnection", args, &reply)
 	if reply {
 		log.Println("Successfully added connection of", s2, "to", s1)
@@ -277,24 +287,21 @@ func breakConnection(args []string) error {
 		return err
 	}
 
-	if node1Alive, ok1 := isNodeAlive[nodeId1]; ok1 {
-		if node2Alive, ok2 := isNodeAlive[nodeId2]; ok2 {
-			// Both nodes should be active in the system
-			if node1Alive && node2Alive {
-				if nodeType[nodeId1] == NODE_CLIENT && nodeType[nodeId2] == NODE_CLIENT {
-					return errors.New("cannot break connection between two clients")
-				}
-
-				if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
-					removeConnectionBetweenServers(nodeId1, nodeId2)
-					removeConnectionBetweenServers(nodeId2, nodeId1)
-				} else { // connection between a server and a client
-					// TODO corresponding call to client
-				}
-
-				// If successful
-				return nil
+	if _, ok1 := portMapping[nodeId1]; ok1 {
+		if _, ok2 := portMapping[nodeId2]; ok2 {
+			if nodeType[nodeId1] == NODE_CLIENT && nodeType[nodeId2] == NODE_CLIENT {
+				return errors.New("cannot break connection between two clients")
 			}
+
+			if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
+				removeConnectionBetweenServers(nodeId1, nodeId2)
+				removeConnectionBetweenServers(nodeId2, nodeId1)
+			} else { // connection between a server and a client
+				// TODO corresponding call to client
+			}
+
+			// If successful
+			return nil
 		}
 	}
 	return errors.New("either the nodes are not alive in the system or are not started yet")
@@ -310,40 +317,34 @@ func createConnection(args []string) error {
 		return err
 	}
 
-	if node1Alive, ok1 := isNodeAlive[nodeId1]; ok1 {
-		if node2Alive, ok2 := isNodeAlive[nodeId2]; ok2 {
-			// Both nodes should be active in the system
-			if node1Alive && node2Alive {
-				if nodeType[nodeId1] == NODE_CLIENT && nodeType[nodeId2] == NODE_CLIENT {
-					return errors.New("cannot create connection between two clients")
-				}
-
-				if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
-					addConnectionBetweenServers(nodeId1, nodeId2)
-					addConnectionBetweenServers(nodeId2, nodeId1)
-				} else { // connection between a server and a client
-					// TODO corresponding call to client
-				}
-
-				// If successful
-				return nil
+	if _, ok1 := portMapping[nodeId1]; ok1 {
+		if _, ok2 := portMapping[nodeId2]; ok2 {
+			if nodeType[nodeId1] == NODE_CLIENT && nodeType[nodeId2] == NODE_CLIENT {
+				return errors.New("cannot create connection between two clients")
 			}
+
+			if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
+				addConnectionBetweenServers(nodeId1, nodeId2)
+				addConnectionBetweenServers(nodeId2, nodeId1)
+			} else { // connection between a server and a client
+				// TODO corresponding call to client
+			}
+
+			// If successful
+			return nil
 		}
 	}
 	return errors.New("either the nodes are not alive in the system or are not started yet")
 }
 
 func stabilize(args []string) error {
-	for k, v := range portMapping {
+	for k := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
-			hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(v)
-
 			// TODO Implement multi threading here and wait on all threads to complete
-			conn, err := util.DialWithRetry(hostPortPair)
+			client, err := getRpcClient(k)
 			if err != nil {
 				return err
 			}
-			client := rpc.NewClient(conn)
 
 			log.Println("Sending stabilize call to server", k)
 			var reply bool
@@ -354,7 +355,6 @@ func stabilize(args []string) error {
 				log.Fatal("Reply status is false. Stabilize command failed.")
 			}
 		}
-
 	}
 	/*
 	Here goes the code to message all the servers to stabilize
@@ -369,17 +369,15 @@ func printStore(args []string) error {
 	}
 
 	// If the node with this id is not alive in the system
-	if nodeAlive, ok := isNodeAlive[serverId]; !ok || !nodeAlive {
-		return errors.New("Node with id " + strconv.Itoa(serverId) + " does not exist or is not alive!")
+	if _, ok := portMapping[serverId]; !ok {
+		return errors.New("Node with id " + strconv.Itoa(serverId) +
+			" does not exist or is not alive!")
 	}
 
-	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
-
-	conn, err := util.DialWithRetry(hostPortPair)
+	client, err := getRpcClient(serverId)
 	if err != nil {
 		return err
 	}
-	client := rpc.NewClient(conn)
 
 	log.Println("Printing the DB contents of server", serverId)
 	var reply bool
@@ -402,7 +400,7 @@ func put(args []string) error {
 	//value := args[3]
 
 	// If the node with this id is not alive in the system
-	if nodeAlive, ok := isNodeAlive[clientId]; !ok || !nodeAlive {
+	if _, ok := portMapping[clientId]; !ok {
 		return errors.New("Node with id " + strconv.Itoa(clientId) + " does not exist or is not alive!")
 	}
 
@@ -422,8 +420,9 @@ func get(args []string) error {
 	//key := args[2]
 
 	// If the node with this id is not alive in the system
-	if nodeAlive, ok := isNodeAlive[clientId]; !ok || !nodeAlive {
-		return errors.New("Node with id " + strconv.Itoa(clientId) + " does not exist or is not alive!")
+	if _, ok := portMapping[clientId]; !ok {
+		return errors.New("Node with id " + strconv.Itoa(clientId) +
+			" does not exist or is not alive!")
 	}
 
 	/*
@@ -433,7 +432,6 @@ func get(args []string) error {
 	// If successful
 	return nil
 }
-
 
 func main() {
 	args := os.Args
@@ -449,17 +447,18 @@ func main() {
 		log.Fatal(err)
 	}
 	defer file.Close()
+	defer closeAllClients()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
 		parts := strings.Split(line, " ")
-		num_parts := len(parts)
-		if num_parts == 0 {
+		numParts := len(parts)
+		if numParts == 0 {
 			continue
 		}
 		if function, ok := functionMap[parts[0]]; ok {
-			if num_parts - 1 != numArgsMap[parts[0]] {
+			if numParts - 1 != numArgsMap[parts[0]] {
 				log.Fatal("Command ", parts[0], " should have exactly ", numArgsMap[parts[0]], " argument(s).")
 			}
 			err := function(parts)
