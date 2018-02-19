@@ -8,6 +8,8 @@ import (
 	"strings"
 	"strconv"
 	"errors"
+	"github.com/pandian4github/distributed-kv-store/util"
+	"os/exec"
 )
 
 var functionMap = map[string]func(args []string) error {
@@ -65,13 +67,44 @@ func joinServer(args []string) error {
 	portMapping[serverId] = basePort
 	nodeType[serverId] = NODE_SERVER
 
-	/*
-	Here goes the code to start a new server (arguments are base_port to which it should listen,
-	serverId and the other server-port details). Also, notify the other servers about this
-	new server added to the cluster.
-	*/
+	// Fetch the other server details from global portMapping (which includes both server and client)
+	// map of serverId to host:port
+	otherServers := map[int]string {}
+
+	for k, v := range portMapping {
+		if nodeType, ok := nodeType[k]; ok {
+			if nodeType == NODE_SERVER && k != serverId {
+				otherServers[k] = "127.0.0.1:" + strconv.Itoa(v)
+			}
+		}
+	}
+
+	otherServersStr, err := util.EncodeMapIntStringToStringCustom(otherServers)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	logFileName := "logs/server" + strconv.Itoa(serverId) + ".log"
+	log.Println("Starting a go process for server", serverId, "with stdout", logFileName)
+
+	cmd := exec.Command("go", "run", "server.go", strconv.Itoa(serverId),
+		strconv.Itoa(basePort), otherServersStr)
+
+	// TODO: need to close this file somewhere
+	out, err := os.Create(logFileName)
+	if err != nil {
+		return nil
+	}
+	cmd.Stdout = out
+	cmd.Stderr = out
+
+	cmd.Start()
 
 	isNodeAlive[serverId] = true
+
+	/*
+	TODO: Notify other servers about this new server added using RPC calls.
+	 */
 
 	return nil
 
@@ -213,8 +246,8 @@ func put(args []string) error {
 	if err != nil {
 		return err
 	}
-	key := args[2]
-	value := args[3]
+	//key := args[2]
+	//value := args[3]
 
 	// If the node with this id is not alive in the system
 	if nodeAlive, ok := isNodeAlive[clientId]; !ok || !nodeAlive {
@@ -234,7 +267,7 @@ func get(args []string) error {
 	if err != nil {
 		return err
 	}
-	key := args[2]
+	//key := args[2]
 
 	// If the node with this id is not alive in the system
 	if nodeAlive, ok := isNodeAlive[clientId]; !ok || !nodeAlive {

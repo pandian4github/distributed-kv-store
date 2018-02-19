@@ -1,5 +1,13 @@
 package util
 
+import (
+	"bytes"
+	"encoding/gob"
+	"strconv"
+	"strings"
+	"errors"
+)
+
 const (
 	HAPPENED_BEFORE = 0
 	HAPPENED_AFTER = 1
@@ -45,3 +53,76 @@ func happenedBefore(ts1, ts2 map[int]int) int {
 	}
 	return HAPPENED_AFTER
 }
+
+func EncodeMapIntStringToStringGob(mp map[int]string) (string, error) {
+	b := new(bytes.Buffer)
+	e := gob.NewEncoder(b)
+
+	err := e.Encode(mp)
+	return b.String(), err
+}
+
+func DecodeMapIntStringFromStringGob(str string) (map[int]string, error) {
+	b := bytes.NewBufferString(str)
+	d := gob.NewDecoder(b)
+
+	var mp map[int]string
+	err := d.Decode(&mp)
+
+	return mp, err
+}
+
+/*
+Encodes the map into a string in the format key1@value1,key2@value2,....
+*/
+func EncodeMapIntStringToStringCustom(mp map[int]string) (string, error) {
+	var buffer bytes.Buffer
+	for k, v := range mp {
+		buffer.WriteString(strconv.Itoa(k) + "@" + v + ",")
+	}
+	return buffer.String(), nil
+}
+
+/*
+Decodes the map from given string in the format key1@value1,key2@value2,....
+*/
+func DecodeMapIntStringFromStringCustom(str string) (map[int]string, error) {
+	parts := strings.Split(str, ",")
+
+	mp := map[int]string {}
+	for _, part := range parts {
+		if len(part) == 0 {
+			continue
+		}
+		subParts := strings.Split(part, "@")
+		if len(subParts) != 2 {
+			return mp, errors.New("unable to decode map from string " + str)
+		}
+		key, err := strconv.Atoi(subParts[0])
+		if err != nil {
+			return mp, err
+		}
+		mp[key] = subParts[1]
+	}
+	return mp, nil
+}
+
+/*
+func main() {
+	var x = map[int]string {
+		123: "abc:234",
+		124: "def:567",
+	}
+	str, e := EncodeMapIntStringToString(x)
+	if e != nil {
+		panic(e)
+	}
+	log.Println(str)
+
+	y, e2 := DecodeMapIntStringFromString(str)
+	if e2 != nil {
+		panic(e2)
+	}
+	log.Println(y)
+}
+*/

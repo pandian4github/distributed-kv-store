@@ -16,7 +16,7 @@ import (
    basePort + 1 - listens to other servers (for gossip and stabilize)
    basePort + 2 - listens to clients (to execute commands)
 */
-var serverId int
+var thisServerId int
 var basePort int
 
 // Maps serverId to host:basePort of that server
@@ -49,21 +49,21 @@ func getOtherServerDetails(str string) error {
 
 func listenToMaster() error {
 	defer waitGroup.Done()
-	portToListen := basePort
+	//portToListen := basePort
 
 	return nil
 }
 
 func listenToServers() error {
 	defer waitGroup.Done()
-	portToListen := basePort + 1
+	//portToListen := basePort + 1
 
 	return nil
 }
 
 func listenToClients() error {
 	defer waitGroup.Done()
-	portToListen := basePort + 2
+	//portToListen := basePort + 2
 
 	return nil
 }
@@ -97,12 +97,14 @@ func main() {
 		log.Fatal("Unable to get the basePort")
 	}
 
+	log.Println("Starting server with id", serverId, "to listen on basePort", basePort)
 	// If the list of other servers are also specified
 	if len(args) >= 4 {
 		getOtherServerDetails(args[3])
 	}
 
-	//log.Println(otherServers)
+	log.Println("other server details:", otherServers)
+	thisServerId = serverId
 
 	// since we are starting three threads
 	waitGroup.Add(4)
