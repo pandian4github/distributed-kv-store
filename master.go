@@ -113,7 +113,6 @@ func joinServer(args []string) error {
 	for k, v := range otherServers {
 		otherServerId := k
 		otherServerHostPortPair := v
-		log.Println(k, v)
 
 		conn, err := util.DialWithRetry(otherServerHostPortPair)
 		if err != nil {
@@ -130,6 +129,7 @@ func joinServer(args []string) error {
 		} else {
 			log.Fatal("Reply status is false. Broadcast failed.")
 		}
+		conn.Close()
 	}
 
 	return nil
@@ -142,12 +142,48 @@ func killServer(args []string) error {
 		return err
 	}
 
-	/*
-	Here goes the code to kill a server and notify all other servers that the specified server
-	is killed.
-	*/
+	for k, v := range portMapping {
+		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
+			hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(v)
 
-	// If server is successfully killed, remove it from active list
+			conn, err := util.DialWithRetry(hostPortPair)
+			if err != nil {
+				log.Fatal(err)
+			}
+			client := rpc.NewClient(conn)
+
+			log.Println("Broadcasting the server information to remove to the server", k)
+			var reply bool
+			args := &shared.RemoveServerArgs{ServerId:serverId}
+			client.Call("ServerMaster.RemoveServer", args, &reply)
+			if reply {
+				log.Println("Successfully broadcasted.")
+			} else {
+				log.Fatal("Reply status is false. Broadcast failed.")
+			}
+		}
+	}
+
+	// HACK - explicitly giving the victim server a RPC call to kill the process
+	hostPortPair := LOCALHOST_PREFIX + strconv.Itoa(portMapping[serverId])
+	conn, err := util.DialWithRetry(hostPortPair)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := rpc.NewClient(conn)
+
+	log.Println("Explicitly killing the server again by a RPC call..")
+	var reply bool
+	removeArgs := &shared.RemoveServerArgs{ServerId:serverId}
+	client.Call("ServerMaster.RemoveServer", removeArgs, &reply)
+	if reply {
+		log.Println("Successfully killed.")
+	} else {
+		log.Fatal("Reply status is false. Kill failed.")
+	}
+
+	// If server is successfully killed, remove it from active list and portMapping
+	delete(portMapping, serverId)
 	isNodeAlive[serverId] = false
 
 	return nil

@@ -10,3 +10,7 @@ type NewServerArgs struct {
 	ServerId int
 	HostPortPair string // host:port
 }
+
+type RemoveServerArgs struct {
+	ServerId int
+}

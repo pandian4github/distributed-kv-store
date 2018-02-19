@@ -10,6 +10,7 @@ import (
 	"github.com/pandian4github/distributed-kv-store/shared"
 	"net/rpc"
 	"net"
+	"time"
 )
 
 /*
@@ -27,6 +28,9 @@ var otherServers = map[int]string {}
 
 // To wait for all threads to complete before exiting
 var waitGroup sync.WaitGroup
+
+// Flag which is set during a killServer
+var shutDown = false
 
 // From the given command line argument, parse the other server details
 // Format: serverId1@host1:basePort1,serverId2@host2:basePort2,...
@@ -63,6 +67,20 @@ func (t *ServerMaster) AddNewServer(newServer *shared.NewServerArgs, status *boo
 	return nil
 }
 
+func (t *ServerMaster) RemoveServer(removeServer *shared.RemoveServerArgs, status *bool) error {
+	serverId := removeServer.ServerId
+
+	if thisServerId == serverId { // Kill this server
+		log.Println("Marking shutDown flag..")
+		shutDown = true
+	} else { // Remove the server details from the map
+		log.Println("Removing server", serverId, "from the cluster..")
+		delete(otherServers, serverId)
+	}
+	*status = true
+	return nil
+}
+
 func listenToMaster() error {
 	defer waitGroup.Done()
 	portToListen := thisBasePort
@@ -77,10 +95,27 @@ func listenToMaster() error {
 	if e != nil {
 		log.Fatal(e)
 	}
+	defer l.Close()
 
 	log.Println("Accepting connections from the listener in address", l.Addr())
-	rpcServer.Accept(l)
-	log.Println("Returning..")
+
+	for {
+		if shutDown {
+			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			log.Println("Shutting down the server..")
+			break
+		}
+		log.Println("Listening to connection from the master..")
+		conn, err := l.Accept()
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		//log.Println("Serving the connection request..")
+		go rpcServer.ServeConn(conn)
+		//log.Println("Connection request served. ")
+	}
+
 	return nil
 }
 

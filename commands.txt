@@ -1,3 +1,4 @@
 joinServer 0
 joinServer 1
-joinServer 2
+killServer 0
+killServer 1
