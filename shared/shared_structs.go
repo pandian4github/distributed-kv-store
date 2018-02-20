@@ -15,6 +15,16 @@ type RemoveServerArgs struct {
 	ServerId int
 }
 
+type PutArgs struct {
+	Key, Value string
+	ClientId, ServerId, ClientClock int
+}
+
+type GetArgs struct {
+	Key string
+	ClientId, ServerId, ClientClock int
+}
+
 /*
 Value is the struct which encloses the actual value stored in the key-value store
 */

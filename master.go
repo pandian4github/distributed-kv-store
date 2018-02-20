@@ -58,15 +58,6 @@ var masterRpcClientMap = map[int]*rpc.Client {}
 const NODE_SERVER = 0
 const NODE_CLIENT = 1
 
-type PutArgs struct {
-	key, value string
-	clientId int
-}
-
-type GetArgs struct {
-	key string
-}
-
 func getMasterRpcClient(nodeId int) (*rpc.Client, error) {
 	if client, ok := masterRpcClientMap[nodeId]; ok {
 		return client, nil
@@ -426,8 +417,8 @@ func put(args []string) error {
 		return err
 	}
 	var reply bool
-	putArgs := PutArgs{key, value, clientId }
-	client.Call("ClientMaster.clientPut", putArgs, &reply)
+	putArgs := shared.PutArgs{key, value, clientId, 0, 0}
+	client.Call("ClientMaster.ClientPut", putArgs, &reply)
 
 	if reply != true {
 		log.Fatal("clientPut was not successful!")

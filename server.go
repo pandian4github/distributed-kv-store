@@ -335,7 +335,14 @@ Implementation of different RPC methods exported by server to clients
 */
 type ServerClient int
 
-func (t *ServerClient) ServerPut(key string, value string, clientId int, serverId int, clientClock int, reply *shared.Clock) error {
+func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) error {
+	// Resolve putArgs parameter
+	key := putArgs.Key
+	value := putArgs.Value
+	serverId := putArgs.ServerId
+	clientId := putArgs.ClientId
+	clientClock := putArgs.ClientClock
+
 	// Increment servers logical clock on receiving a put request from the master
 	incrementMyClock()
 	// Update the client timeStamp
