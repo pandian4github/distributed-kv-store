@@ -8,10 +8,10 @@ import (
 	"strings"
 	"strconv"
 	"errors"
-	"github.com/pandian4github/distributed-kv-store/util"
+	"./util"
 	"os/exec"
 	"net/rpc"
-	"github.com/pandian4github/distributed-kv-store/shared"
+	"./shared"
 	"sync"
 )
 
@@ -403,17 +403,26 @@ func put(args []string) error {
 	if err != nil {
 		return err
 	}
-	//key := args[2]
-	//value := args[3]
+	key := args[2]
+	value := args[3]
 
 	// If the node with this id is not alive in the system
 	if _, ok := portMapping[clientId]; !ok {
 		return errors.New("Node with id " + strconv.Itoa(clientId) + " does not exist or is not alive!")
 	}
 
-	/*
-	Here goes the code to tell the client to put the key-value pair.
-	*/
+	client, err := getMasterRpcClient(clientId)
+	if err != nil {
+		log.Fatal("Failed: rpc.Dail from Master to Client", err)
+		return err
+	}
+	var reply bool
+	putArgs := shared.PutArgs{key, value, clientId, 0, 0}
+	client.Call("ClientMaster.ClientPut", putArgs, &reply)
+
+	if reply != true {
+		log.Fatal("clientPut was not successful!")
+	}
 
 	// If successful
 	return nil

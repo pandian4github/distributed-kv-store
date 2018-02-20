@@ -15,14 +15,24 @@ type RemoveServerArgs struct {
 	ServerId int
 }
 
+type PutArgs struct {
+	Key, Value string
+	ClientId, ServerId, ClientClock int
+}
+
+type GetArgs struct {
+	Key string
+	ClientId, ServerId, ClientClock int
+}
+
 /*
 Value is the struct which encloses the actual value stored in the key-value store
 */
 type Value struct {
 	Val string // actual value
 	Ts map[int]int // vector timestamp
-	serverId int // server to which the value was written
-	clientId int // client which wrote this value
+	ServerId int // server to which the value was written
+	ClientId int // client which wrote this value
 }
 
 type BootstrapDataResponse struct {
