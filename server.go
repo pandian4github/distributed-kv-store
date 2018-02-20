@@ -345,27 +345,20 @@ func (t *ServerClient) ServerPut(key string, value string, clientId int, serverI
 
 	// Update/Write to the inFlightDb
 	newValue := shared.Value{value, thisVecTs, serverId, clientId}
-	exists := inFlightDb[key]
-	if exists.Val == "" && exists.Ts == nil && exists.ServerId == 0 && exists.ClientId == 0 {
+	prevValue, exists := inFlightDb[key]
+	if exists == false {
 		// Create a new entry into the inFlightDb
 		inFlightDb[key] = newValue
 	} else {
 		// Compare the timeStamps of the values and either update or ignore
-		prevValue := inFlightDb[key]
-		ordering := util.HappenedBefore(prevValue.Ts, newValue.Ts)
+		ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, newValue.Ts, newValue.ServerId)
 		if ordering == util.HAPPENED_BEFORE {
 			inFlightDb[key] = newValue
-		} else if ordering == util.CONCURRENT {
-			deterministicOrder := util.OrderConcurrentEvents(prevValue.Ts, newValue.Ts)
-			if deterministicOrder == util.HAPPENED_BEFORE {
-				inFlightDb[key] = newValue
-			}
 		}
 	}
 
 	// Set the timestamp of this transaction to the return value
 	*reply = newValue.Ts
-
 	return nil
 }
 

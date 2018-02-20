@@ -20,8 +20,23 @@ const (
 	CONCURRENT
 )
 
-func OrderConcurrentEvents(ts1, ts2 map[int]int) int {
-	return HAPPENED_BEFORE
+func TotalOrderOfEvents(ts1 map[int]int, s1 int, ts2 map[int]int, s2 int) int {
+	// Check if the events are totally ordered
+	ordering := HappenedBefore(ts1, ts2)
+	if ordering != CONCURRENT {
+		return ordering
+	}
+	// Deterministic ordering if the events are concurrent
+	if s1 < s2 {
+		return HAPPENED_BEFORE
+	}
+	if s1 > s2 {
+		return HAPPENED_AFTER
+	}
+	if ts1[s1] < ts2[s1] {
+		return HAPPENED_BEFORE
+	}
+	return HAPPENED_AFTER
 }
 
 func HappenedBefore(ts1, ts2 map[int]int) int {
