@@ -9,8 +9,8 @@ import (
 	"errors"
 	"net/rpc"
 	"net"
-	"strings"
-	"github.com/pandian4github/distributed-kv-store/util"
+	"./shared"
+	"./util"
 )
 
 
@@ -25,44 +25,52 @@ var clientServerConnection net.Conn
 var clientMasterConnection rpc.Server
 //Need a map from clientId->serverConnPort
 
+// client LogicalClock
+var clientLogicalClock = 0
 
 type ClientMaster int
 
 type PutArgs struct {
 	key, value string
-	clientId, serverId int
+	clientId, serverId, clientLogicalClock int
 }
 
 type GetArgs struct {
 	key string
 }
 
+type history struct {
+	action string
+	key, value string
+	clientId, serverId int
+	timeStamp map[int]int
+}
+
+var clientHistory []history
+
 var clientWaitGroup sync.WaitGroup
 
 func (t *ClientMaster) clientPut(clientId int, key string, value string) error {
+	// Increment clients logical clock on receiving a put request from the master
+	clientLogicalClock += 1
 
-	/*
-	get serverId from clientId from map in master
-	get serverBasePort from serverId from map in master
-	*/
-
+	// Make a put request to the connected server
 	if serverConn == 0 {
 		return errors.New("connection does not exist")
 	}
-
- 	args := &PutArgs{key, value, clientId, serverConn}
- 	var reply int
-
+ 	args := &PutArgs{key, value, clientId, serverConn, clientLogicalClock}
+ 	// reply contains vectorTimeStamp corresponding to this transaction
+ 	var reply shared.Clock
 	client := rpc.NewClient(clientServerConnection)
-	err := client.Call("ClientServer.ServerPut", args, &reply)
-
+	err := client.Call("ServerClient.ServerPut", args, &reply)
 	if err != nil {
 		fmt.Println(err)
 	} else {
+		// On a successful put, add this transaction into the client's history
 		fmt.Println("Put successful")
+		currTransaction := history{"put", key, value, clientId, serverConn, reply}
+		clientHistory = append(clientHistory, currTransaction)
 	}
-
-	// If successful
 	return nil
 }
 
@@ -95,7 +103,7 @@ func (t *ClientMaster) clientGet(clientId int, key string) error {
 }
 
 func clientListenToMaster() error {
-	defer waitGroup.Done()
+	defer clientWaitGroup.Done()
 	portToListen := clientBasePort
 	clientBasePortStr := ":"
 	clientBasePortStr = clientBasePortStr + strconv.Itoa(portToListen)
@@ -119,7 +127,7 @@ func clientListenToMaster() error {
 }
 
 func clientTalkToServer() error {
-	defer waitGroup.Done()
+	defer clientWaitGroup.Done()
 
 	portToTalk := serverBasePort + 2
 	hostPortPair := util.LOCALHOST_PREFIX
@@ -145,22 +153,22 @@ func main() {
 
 	clientId, err := strconv.Atoi(args[1])
 	if err != nil {
-		log.Fatal("Unable to get the clientId")
+		log.Fatal("Unable to get the clientId", clientId)
 	}
 
 	serverConn, err := strconv.Atoi(args[2])
 	if err != nil {
-		log.Fatal("Unable to get the serverId")
+		log.Fatal("Unable to get the serverId", serverConn)
 	}
 
 	serverBasePort, err := strconv.Atoi(args[3])
 	if err != nil {
-		log.Fatal("Unable to get the server basePort")
+		log.Fatal("Unable to get the server basePort", serverBasePort)
 	}
 
 	clientBasePort, err := strconv.Atoi(args[4])
 	if err != nil {
-		log.Fatal("Unable to get the client basePort")
+		log.Fatal("Unable to get the client basePort", clientBasePort)
 	}
 
 	//starting two threads

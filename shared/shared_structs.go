@@ -21,8 +21,8 @@ Value is the struct which encloses the actual value stored in the key-value stor
 type Value struct {
 	Val string // actual value
 	Ts map[int]int // vector timestamp
-	serverId int // server to which the value was written
-	clientId int // client which wrote this value
+	ServerId int // server to which the value was written
+	ClientId int // client which wrote this value
 }
 
 type BootstrapDataResponse struct {

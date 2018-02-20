@@ -7,12 +7,13 @@ import (
 	"strings"
 	"errors"
 	"sync"
-	"github.com/pandian4github/distributed-kv-store/shared"
+	"./shared"
 	"net/rpc"
 	"net"
 	"time"
-	"github.com/pandian4github/distributed-kv-store/util"
+	"./util"
 	"math/rand"
+	//"fmt"
 )
 
 /*
@@ -332,6 +333,41 @@ func listenToServers() error {
 /*
 Implementation of different RPC methods exported by server to clients
 */
+type ServerClient int
+
+func (t *ServerClient) ServerPut(key string, value string, clientId int, serverId int, clientClock int, reply *shared.Clock) error {
+	// Increment servers logical clock on receiving a put request from the master
+	incrementMyClock()
+	// Update the client timeStamp
+	if thisVecTs[clientId] < clientClock {
+		thisVecTs[clientId] = clientClock
+	}
+
+	// Update/Write to the inFlightDb
+	newValue := shared.Value{value, thisVecTs, serverId, clientId}
+	exists := inFlightDb[key]
+	if exists.Val == "" && exists.Ts == nil && exists.ServerId == 0 && exists.ClientId == 0 {
+		// Create a new entry into the inFlightDb
+		inFlightDb[key] = newValue
+	} else {
+		// Compare the timeStamps of the values and either update or ignore
+		prevValue := inFlightDb[key]
+		ordering := util.HappenedBefore(prevValue.Ts, newValue.Ts)
+		if ordering == util.HAPPENED_BEFORE {
+			inFlightDb[key] = newValue
+		} else if ordering == util.CONCURRENT {
+			deterministicOrder := util.OrderConcurrentEvents(prevValue.Ts, newValue.Ts)
+			if deterministicOrder == util.HAPPENED_BEFORE {
+				inFlightDb[key] = newValue
+			}
+		}
+	}
+
+	// Set the timestamp of this transaction to the return value
+	*reply = newValue.Ts
+
+	return nil
+}
 
 func listenToClients() error {
 	defer waitGroup.Done()

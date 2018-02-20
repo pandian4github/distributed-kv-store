@@ -20,7 +20,11 @@ const (
 	CONCURRENT
 )
 
-func happenedBefore(ts1, ts2 map[int]int) int {
+func OrderConcurrentEvents(ts1, ts2 map[int]int) int {
+	return HAPPENED_BEFORE
+}
+
+func HappenedBefore(ts1, ts2 map[int]int) int {
 	vecTs1Lesser, vecTs2Lesser := false, false
 
 	for k, v1 := range ts1 {
