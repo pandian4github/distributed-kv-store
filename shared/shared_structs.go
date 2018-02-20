@@ -21,8 +21,9 @@ type PutArgs struct {
 }
 
 type GetArgs struct {
+	// TODO (check): Do we need serverId and clientId in here
 	Key string
-	ClientId, ServerId, ClientClock int
+	ClientId, ServerId int
 }
 
 /*

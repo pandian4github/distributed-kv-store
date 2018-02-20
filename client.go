@@ -63,6 +63,7 @@ func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
 	clientLogicalClock += 1
 	key := args.Key
 	value := args.Value
+	clientId := args.ClientId
 	*retVal = false
 	// Make a put request to the connected server
 	if serverConn == 0 {
@@ -71,11 +72,11 @@ func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
  	putArgs := shared.PutArgs{key, value, clientId, serverConn, clientLogicalClock}
  	// reply contains vectorTimeStamp corresponding to this transaction
  	var reply shared.Clock
-	client, err := getClientRpcServer(clientId)
+	serverToTalk, err := getClientRpcServer(clientId)
 	if err != nil {
 		return err
 	}
-	err = client.Call("ServerClient.ServerPut", putArgs, &reply)
+	err = serverToTalk.Call("ServerClient.ServerPut", putArgs, &reply)
 	if err != nil {
 		return err
 	} else {
@@ -89,29 +90,32 @@ func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
 	return nil
 }
 
-func (t *ClientMaster) ClientGet(clientId int, key string) error {
-
-	/*
-	get serverId from clientId from map in master
-	get serverBasePort from serverId from map in master
-	 */
-
-	//if serverConn == 0 {
-	//	return errors.New("connection does not exist")
-	//}
-	//
-	//args := &GetArgs{key}
-	//var reply string
-
-	//client := rpc.NewClient()
-	//err := client.Call("ClientServer.ServerGet", args, &reply)
-	//defer client.Close()
-	//
-	//if err != nil {
-	//	log.Println(err)
-	//} else {
-	//	fmt.Println("Put successful")
-	//}
+func (t *ClientMaster) ClientGet(args shared.GetArgs, retVal *bool) error {
+	// Increment clients logical clock on receiving a get request from master
+	clientLogicalClock += 1
+	key := args.Key
+	clientId := args.ClientId
+	*retVal = false
+	// Make a get request from the connected server
+	if serverConn == 0 {
+		return errors.New("connection does not exist")
+	}
+	getArgs := shared.GetArgs{key, clientId, serverConn}
+	// ServerGet rpc replies with the a value from the key-value store
+	reply := new(shared.Value)
+	serverToTalk, err := getClientRpcServer(clientId)
+	if err != nil {
+		return err
+	}
+	err = serverToTalk.Call("ServerClient.ServerGet", getArgs, &reply)
+	if err != nil {
+		// ERR_NO_KEY is handled here!
+		return err
+	} else {
+		// TODO: Handle ERR_DEP
+		// reply contains shared.Value == key, vectorTimeStamp, serverId, clientId
+		fmt.Println("ClientGet is successful", reply)
+	}
 
 	// If successful
 	return nil

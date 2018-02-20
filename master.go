@@ -417,11 +417,12 @@ func put(args []string) error {
 		return err
 	}
 	var reply bool
+	// TODO: Get serverId the server to client map
 	putArgs := shared.PutArgs{key, value, clientId, 0, 0}
 	client.Call("ClientMaster.ClientPut", putArgs, &reply)
 
 	if reply != true {
-		log.Fatal("clientPut was not successful!")
+		log.Fatal("ClientPut was not successful!")
 	}
 
 	// If successful
@@ -433,17 +434,26 @@ func get(args []string) error {
 	if err != nil {
 		return err
 	}
-	//key := args[2]
+	key := args[2]
 
 	// If the node with this id is not alive in the system
 	if _, ok := portMapping[clientId]; !ok {
 		return errors.New("Node with id " + strconv.Itoa(clientId) +
 			" does not exist or is not alive!")
 	}
+	client, err := getMasterRpcClient(clientId)
+	if err != nil {
+		log.Fatal("Failed: rpc.Dail from Master to Client", err)
+		return err
+	}
+	var reply bool
+	// TODO: Get serverId from client to server map
+	getArgs := shared.GetArgs{key, clientId, 0}
+	client.Call("ClientMaster.ClientGet", getArgs, &reply)
 
-	/*
-	Here goes the code to tell the client to print the value for the given key.
-	*/
+	if reply != true {
+		log.Fatal("ClientGet was not successful")
+	}
 
 	// If successful
 	return nil

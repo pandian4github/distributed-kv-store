@@ -336,6 +336,7 @@ Implementation of different RPC methods exported by server to clients
 type ServerClient int
 
 func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) error {
+	// TODO: Handle Multiple Clients
 	// Resolve putArgs parameter
 	key := putArgs.Key
 	value := putArgs.Value
@@ -343,7 +344,7 @@ func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) er
 	clientId := putArgs.ClientId
 	clientClock := putArgs.ClientClock
 
-	// Increment servers logical clock on receiving a put request from the master
+	// Increment servers logical clock on receiving a put request from the client
 	incrementMyClock()
 	// Update the client timeStamp
 	if thisVecTs[clientId] < clientClock {
@@ -367,6 +368,28 @@ func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) er
 	// Set the timestamp of this transaction to the return value
 	*reply = newValue.Ts
 	return nil
+}
+
+func (t *ServerClient) ServerGet(getArgs shared.GetArgs, reply *shared.Value) error {
+	// TODO: Handle Multiple Clients
+	key := getArgs.Key
+	// Increment the clock on receiving a get request from client
+	incrementMyClock()
+
+	// Check for the key in inFlightDB first.
+	value, ok := inFlightDb[key]
+	if ok {
+		*reply = value
+		return nil
+	}
+	// Check for the key in persistedDb
+	value, ok = persistedDb[key]
+	if ok {
+		*reply = value
+		return nil
+	}
+	// key is not found in both inFlightDb and persistedDb
+	return errors.New("ERR_NO_KEY")
 }
 
 func listenToClients() error {
