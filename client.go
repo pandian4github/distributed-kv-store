@@ -86,11 +86,11 @@ func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
 		// On a successful put, add this transaction into the client's history
 		// reply contains the timestamp recorded at the server for this put call
 		fmt.Println("Put successful")
-		currKey := &historyKey{key, clientId}
+		currKey := historyKey{key, clientId}
 		currVal := historyValue{value, reply[clientId]}
 		// If some value with same key, clientId pair exists in clientHistory,
 		// we can satisfy both READ_YOUR_WRITES or MONOTONIC_READS by just replacing it
-		clientHistory[*currKey] = currVal
+		clientHistory[currKey] = currVal
 		*retVal = true
 	}
 	return nil
