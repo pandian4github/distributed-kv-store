@@ -160,9 +160,34 @@ func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
 }
 
 func collateAndResolveConflicts() error {
-	/*
-		TODO collate all the inflight DBs, resolve conflicts and persist to persistedDB
-	*/
+	// Updating persistedDb after resolving conflicts from the other server's updates
+	for _, partialDB := range dataReceivedFrom {
+		for key, currValue := range partialDB {
+			prevValue, ok := persistedDb[key]
+			if ok {
+				ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, currValue.Ts, currValue.ServerId)
+				if ordering == util.HAPPENED_BEFORE {
+					persistedDb[key] = currValue
+				}
+			} else {
+				persistedDb[key] = currValue
+			}
+		}
+	}
+	// Updating persistedDb after resolving conflicts from the updates to this server
+	for key, currValue := range inFlightDb {
+		prevValue, ok := persistedDb[key]
+		if ok {
+			ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, currValue.Ts, currValue.ServerId)
+			if ordering == util.HAPPENED_BEFORE {
+				persistedDb[key] = currValue
+			}
+		} else {
+			persistedDb[key] = currValue
+		}
+	}
+	// After all the updates in flight are persisted clear the inFlightDB
+	inFlightDb = make(DB)
 	return nil
 }
 
@@ -378,7 +403,7 @@ func (t *ServerClient) ServerGet(getArgs shared.GetArgs, reply *shared.Value) er
 	// Increment the clock on receiving a get request from client
 	incrementMyClock()
 
-	// Check for the key in inFlightDB first.
+	// Check for the key in inFlightDb first.
 	value, ok := inFlightDb[key]
 	if ok {
 		*reply = value
