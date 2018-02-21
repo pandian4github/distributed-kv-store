@@ -11,6 +11,12 @@ type NewServerArgs struct {
 	HostPortPair string // host:port
 }
 
+// Argument to the other servers when a new server joins the cluster
+type ClientServerConnectionArgs struct {
+	ServerId int
+	ServerBasePort int
+}
+
 type RemoveServerArgs struct {
 	ServerId int
 }

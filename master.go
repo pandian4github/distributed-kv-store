@@ -233,6 +233,30 @@ func joinClient(args []string) error {
 	return nil
 }
 
+
+/*
+Remove server information from client
+*/
+func removeConnectionBetweenClientServer(clientId int, serverId int) error {
+	client, err := getMasterRpcClient(clientId)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Removing server information of", serverId, "from client", clientId)
+	var reply bool
+	args := &shared.RemoveServerArgs{ServerId:serverId}
+	client.Call("ClientMaster.BreakConnection", args, &reply)
+	if reply {
+		log.Println("Successfully removed connection of", serverId, "from", clientId)
+	} else {
+		log.Fatal("Reply status is false. Break connection failed.")
+	}
+
+	return nil
+}
+
+
 /*
 Remove s2 information from s1 server
 */
@@ -254,6 +278,29 @@ func removeConnectionBetweenServers(s1 int, s2 int) error {
 
 	return nil
 }
+
+/*
+Add s2 information to s1 server
+*/
+func addConnectionBetweenClientServer(clientId int, serverId int) error {
+	client, err := getMasterRpcClient(clientId)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Adding server information of", serverId, "to server", clientId)
+	var reply bool
+	args := &shared.ClientServerConnectionArgs{ServerId:serverId, ServerBasePort:portMapping[serverId]}
+	client.Call("ClientMaster.CreateConnection", args, &reply)
+	if reply {
+		log.Println("Successfully added connection of", serverId, "to", clientId)
+	} else {
+		log.Fatal("Reply status is false. Create connection failed.")
+	}
+
+	return nil
+}
+
 
 /*
 Add s2 information to s1 server
@@ -298,7 +345,11 @@ func breakConnection(args []string) error {
 				removeConnectionBetweenServers(nodeId1, nodeId2)
 				removeConnectionBetweenServers(nodeId2, nodeId1)
 			} else { // connection between a server and a client
-				// TODO corresponding call to client
+				if(nodeType[nodeId1] == NODE_CLIENT) {
+					removeConnectionBetweenClientServer(nodeId1, nodeId2)
+				} else {
+					removeConnectionBetweenClientServer(nodeId2, nodeId1)
+				}
 			}
 
 			// If successful
@@ -328,7 +379,11 @@ func createConnection(args []string) error {
 				addConnectionBetweenServers(nodeId1, nodeId2)
 				addConnectionBetweenServers(nodeId2, nodeId1)
 			} else { // connection between a server and a client
-				// TODO corresponding call to client
+				if nodeType[nodeId1] == NODE_CLIENT {
+					addConnectionBetweenClientServer(nodeId1, nodeId2)
+				} else {
+					addConnectionBetweenClientServer(nodeId2, nodeId1)
+				}
 			}
 
 			// If successful

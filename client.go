@@ -12,18 +12,17 @@ import (
 	"./shared"
 	"./util"
 	//"strings"
+	"sort"
 )
 
 
 /*
   Attributes of this client
 */
-var serverConn int
+var serverId int
 var serverBasePort int
-var clientBasePort int
-var clientId int
-var clientMasterConnection rpc.Server
-//Need a map from clientId->serverConnPort
+var thisClientBasePort int
+var thisClientId int
 
 // client LogicalClock
 var clientLogicalClock = 0
@@ -41,13 +40,71 @@ type historyValue struct {
 }
 
 var clientHistory = make(map[historyKey]historyValue)
+
+/*
+	Storing connected servers information
+ */
+var clientServerBasePortMap = map[int]int {}
 var clientRpcServerMap = map[int]*rpc.Client {}
 
-func getClientRpcServer(clientId int) (*rpc.Client, error) {
-	if server, ok := clientRpcServerMap[clientId]; ok {
+func (t *ClientMaster) CreateConnection(server *shared.ClientServerConnectionArgs, status *bool) error {
+	serverId := server.ServerId
+	serverBasePort := server.ServerBasePort
+	log.Println("Creating connection between this client", thisClientId, "and server", serverId)
+
+	if _, ok := clientServerBasePortMap[serverId]; ok {
+		*status = true
+		return nil
+	}
+
+	clientServerBasePortMap[serverId] = serverBasePort
+
+	/* To get the lowest serverId in the open connections */
+	var serverIds []int
+	for k := range clientServerBasePortMap {
+		serverIds = append(serverIds, k)
+	}
+
+	sort.Ints(serverIds)
+	if len(serverIds) > 0 {
+		serverId = serverIds[0]
+	} else {
+		serverId = 0
+	}
+
+	*status = true
+	return nil
+}
+
+func (t *ClientMaster) BreakConnection(removeServer *shared.RemoveServerArgs, status *bool) error {
+	serverId := removeServer.ServerId
+	log.Println("Breaking connection between this client", thisClientId, "and server", serverId)
+	delete(clientServerBasePortMap, serverId)
+	delete(clientRpcServerMap, serverId)
+
+	/* To get the lowest serverId in the open connections */
+	var serverIds []int
+	for k := range clientServerBasePortMap {
+		serverIds = append(serverIds, k)
+	}
+
+	sort.Ints(serverIds)
+	if len(serverIds) > 0 {
+		serverId = serverIds[0]
+	} else {
+		serverId = 0
+	}
+
+	*status = true
+	return nil
+}
+
+func getClientRpcServer(serverId int) (*rpc.Client, error) {
+	if server, ok := clientRpcServerMap[serverId]; ok {
 		return server, nil
 	}
 	// servers listen to clients on serverBasePort+2
+	serverBasePort = clientServerBasePortMap[serverId]
 	portToConnect := serverBasePort + 2
 	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portToConnect)
 	conn, err := util.DialWithRetry(hostPortPair)
@@ -55,7 +112,7 @@ func getClientRpcServer(clientId int) (*rpc.Client, error) {
 		return nil, err
 	}
 	server := rpc.NewClient(conn)
-	clientRpcServerMap[clientId] = server
+	clientRpcServerMap[serverId] = server
 	return server, nil
 }
 
@@ -68,13 +125,14 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 	value := args.Value
 	*retVal = false
 	// Make a put request to the connected server
-	if serverConn == 0 {
+
+	if serverId == 0 {
 		return errors.New("connection does not exist")
 	}
- 	putArgs := shared.ClientToServerPutArgs{key, value, clientId, clientLogicalClock}
+ 	putArgs := shared.ClientToServerPutArgs{key, value, thisClientId, clientLogicalClock}
  	// reply contains vectorTimeStamp corresponding to this transaction
  	var reply shared.Clock
-	serverToTalk, err := getClientRpcServer(clientId)
+	serverToTalk, err := getClientRpcServer(serverId)
 	if err != nil {
 		return err
 	}
@@ -85,8 +143,8 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		// On a successful put, add this transaction into the client's history
 		// reply contains the timestamp recorded at the server for this put call
 		fmt.Println("Put successful")
-		currKey := historyKey{key, clientId}
-		currVal := historyValue{value, reply[clientId]}
+		currKey := historyKey{key, thisClientId}
+		currVal := historyValue{value, reply[thisClientId]}
 		// If some value with same key, clientId pair exists in clientHistory,
 		// we can satisfy both READ_YOUR_WRITES or MONOTONIC_READS by just replacing it
 		clientHistory[currKey] = currVal
@@ -98,14 +156,17 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	// Increment clients logical clock on receiving a get request from master
 	clientLogicalClock += 1
+
 	*retVal = false
 	// Make a get request from the connected server
-	if serverConn == 0 {
+
+	if serverId == 0 {
 		return errors.New("connection does not exist")
 	}
+
 	// ServerGet rpc replies with the a value from the key-value store
 	reply := new(shared.Value)
-	serverToTalk, err := getClientRpcServer(clientId)
+	serverToTalk, err := getClientRpcServer(serverId)
 	if err != nil {
 		return err
 	}
@@ -117,7 +178,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 		// TODO: Need vectorTS comparision with entries in clientHistory
 		// Handle ERR_DEP
 		// reply contains shared.Value == val, vectorTimeStamp, serverId, clientId
-		checkHistoryKey := historyKey{key, clientId}
+		checkHistoryKey := historyKey{key, thisClientId}
 		checkHistoryValue, ok := clientHistory[checkHistoryKey]
 		if ok {
 			// Compare reply.Ts[reply.ClientId] to checkHistoryValue.clientLogicalClock
@@ -143,7 +204,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 
 func clientListenToMaster() error {
 	defer clientWaitGroup.Done()
-	portToListen := clientBasePort
+	portToListen := thisClientBasePort
 	clientBasePortStr := ":"
 	clientBasePortStr = clientBasePortStr + strconv.Itoa(portToListen)
 
@@ -171,14 +232,14 @@ func main() {
 		log.Fatal("Starting client needs four arguments: clientId, serverId, serverConnectionPort and clientBasePort")
 	}
 
-	clientId, err := strconv.Atoi(args[1])
+	thisClientId, err := strconv.Atoi(args[1])
 	if err != nil {
-		log.Fatal("Unable to get the clientId", clientId)
+		log.Fatal("Unable to get the clientId", thisClientId)
 	}
 
-	serverConn, err := strconv.Atoi(args[2])
+	serverId, err := strconv.Atoi(args[2])
 	if err != nil {
-		log.Fatal("Unable to get the serverId", serverConn)
+		log.Fatal("Unable to get the serverId", serverId)
 	}
 
 	serverBasePort, err := strconv.Atoi(args[3])
@@ -191,8 +252,10 @@ func main() {
 		log.Fatal("Unable to get the client basePort", clientBasePort)
 	}
 
+	clientServerBasePortMap[serverId] = serverBasePort
+
 	//starting two threads
-	clientWaitGroup.Add(2)
+	clientWaitGroup.Add(1)
 
 	go clientListenToMaster()
 	clientWaitGroup.Wait()
