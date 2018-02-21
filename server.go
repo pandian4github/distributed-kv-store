@@ -357,16 +357,18 @@ func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) er
 	if exists == false {
 		// Create a new entry into the inFlightDb
 		inFlightDb[key] = newValue
+		*reply = newValue.Ts
 	} else {
 		// Compare the timeStamps of the values and either update or ignore
 		ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, newValue.Ts, newValue.ServerId)
 		if ordering == util.HAPPENED_BEFORE {
 			inFlightDb[key] = newValue
+			*reply = newValue.Ts
+		} else {
+			*reply = prevValue.Ts
 		}
 	}
-
 	// Set the timestamp of this transaction to the return value
-	*reply = newValue.Ts
 	return nil
 }
 
