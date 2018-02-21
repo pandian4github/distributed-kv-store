@@ -360,12 +360,11 @@ Implementation of different RPC methods exported by server to clients
 */
 type ServerClient int
 
-func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) error {
+func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *shared.Clock) error {
 	// TODO: Handle Multiple Clients
 	// Resolve putArgs parameter
 	key := putArgs.Key
 	value := putArgs.Value
-	serverId := putArgs.ServerId
 	clientId := putArgs.ClientId
 	clientClock := putArgs.ClientClock
 
@@ -377,7 +376,7 @@ func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) er
 	}
 
 	// Update/Write to the inFlightDb
-	newValue := shared.Value{value, thisVecTs, serverId, clientId}
+	newValue := shared.Value{value, thisVecTs, thisServerId, clientId}
 	prevValue, exists := inFlightDb[key]
 	if exists == false {
 		// Create a new entry into the inFlightDb
@@ -397,9 +396,8 @@ func (t *ServerClient) ServerPut(putArgs shared.PutArgs, reply *shared.Clock) er
 	return nil
 }
 
-func (t *ServerClient) ServerGet(getArgs shared.GetArgs, reply *shared.Value) error {
+func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
 	// TODO: Handle Multiple Clients
-	key := getArgs.Key
 	// Increment the clock on receiving a get request from client
 	incrementMyClock()
 

@@ -15,14 +15,13 @@ type RemoveServerArgs struct {
 	ServerId int
 }
 
-type PutArgs struct {
+type MasterToClientPutArgs struct {
 	Key, Value string
-	ClientId, ServerId, ClientClock int
 }
 
-type GetArgs struct {
-	Key string
-	ClientId int
+type ClientToServerPutArgs struct {
+	Key, Value string
+	ClientId, ClientClock int
 }
 
 /*

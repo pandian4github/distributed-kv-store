@@ -61,18 +61,17 @@ func getClientRpcServer(clientId int) (*rpc.Client, error) {
 
 var clientWaitGroup sync.WaitGroup
 
-func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
+func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool) error {
 	// Increment clients logical clock on receiving a put request from the master
 	clientLogicalClock += 1
 	key := args.Key
 	value := args.Value
-	clientId := args.ClientId
 	*retVal = false
 	// Make a put request to the connected server
 	if serverConn == 0 {
 		return errors.New("connection does not exist")
 	}
- 	putArgs := shared.PutArgs{key, value, clientId, serverConn, clientLogicalClock}
+ 	putArgs := shared.ClientToServerPutArgs{key, value, clientId, clientLogicalClock}
  	// reply contains vectorTimeStamp corresponding to this transaction
  	var reply shared.Clock
 	serverToTalk, err := getClientRpcServer(clientId)
@@ -96,28 +95,26 @@ func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
 	return nil
 }
 
-func (t *ClientMaster) ClientGet(args shared.GetArgs, retVal *bool) error {
+func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	// Increment clients logical clock on receiving a get request from master
 	clientLogicalClock += 1
-	key := args.Key
-	clientId := args.ClientId
 	*retVal = false
 	// Make a get request from the connected server
 	if serverConn == 0 {
 		return errors.New("connection does not exist")
 	}
-	getArgs := shared.GetArgs{key, clientId}
 	// ServerGet rpc replies with the a value from the key-value store
 	reply := new(shared.Value)
 	serverToTalk, err := getClientRpcServer(clientId)
 	if err != nil {
 		return err
 	}
-	err = serverToTalk.Call("ServerClient.ServerGet", getArgs, &reply)
+	err = serverToTalk.Call("ServerClient.ServerGet", key, &reply)
 	if err != nil {
 		// ERR_NO_KEY is handled here!
 		return err
 	} else {
+		// TODO: Need vectorTS comparision with entries in clientHistory
 		// Handle ERR_DEP
 		// reply contains shared.Value == val, vectorTimeStamp, serverId, clientId
 		checkHistoryKey := historyKey{key, clientId}

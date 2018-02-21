@@ -417,7 +417,7 @@ func put(args []string) error {
 		return err
 	}
 	var reply bool
-	putArgs := shared.PutArgs{key, value, clientId, 0, 0}
+	putArgs := shared.MasterToClientPutArgs{key, value}
 	client.Call("ClientMaster.ClientPut", putArgs, &reply)
 
 	if reply != true {
@@ -446,8 +446,7 @@ func get(args []string) error {
 		return err
 	}
 	var reply bool
-	getArgs := shared.GetArgs{key, clientId}
-	client.Call("ClientMaster.ClientGet", getArgs, &reply)
+	client.Call("ClientMaster.ClientGet", key, &reply)
 
 	if reply != true {
 		log.Fatal("ClientGet was not successful")
