@@ -30,14 +30,17 @@ var clientLogicalClock = 0
 
 type ClientMaster int
 
-type history struct {
-	action string
-	key, value string
-	clientId, serverId int
-	timeStamp map[int]int
+type historyKey struct {
+	key string
+	clientId int
 }
 
-var clientHistory []history
+type historyValue struct {
+	value string
+	clientLogicalClock int
+}
+
+var clientHistory = make(map[historyKey]historyValue)
 var clientRpcServerMap = map[int]*rpc.Client {}
 
 func getClientRpcServer(clientId int) (*rpc.Client, error) {
@@ -80,11 +83,14 @@ func (t *ClientMaster) ClientPut(args shared.PutArgs, retVal *bool) error {
 	if err != nil {
 		return err
 	} else {
-		// TODO: Finalize on the structure of clientHistory
 		// On a successful put, add this transaction into the client's history
+		// reply contains the timestamp recorded at the server for this put call
 		fmt.Println("Put successful")
-		currTransaction := history{"put", key, value, clientId, serverConn, reply}
-		clientHistory = append(clientHistory, currTransaction)
+		currKey := historyKey{key, clientId}
+		currVal := historyValue{value, reply[clientId]}
+		// If some value with same key, clientId pair exists in clientHistory,
+		// we can satisfy both READ_YOUR_WRITES or MONOTONIC_READS by just replacing it
+		clientHistory[currKey] = currVal
 		*retVal = true
 	}
 	return nil
@@ -100,7 +106,7 @@ func (t *ClientMaster) ClientGet(args shared.GetArgs, retVal *bool) error {
 	if serverConn == 0 {
 		return errors.New("connection does not exist")
 	}
-	getArgs := shared.GetArgs{key, clientId, serverConn}
+	getArgs := shared.GetArgs{key, clientId}
 	// ServerGet rpc replies with the a value from the key-value store
 	reply := new(shared.Value)
 	serverToTalk, err := getClientRpcServer(clientId)
@@ -112,11 +118,28 @@ func (t *ClientMaster) ClientGet(args shared.GetArgs, retVal *bool) error {
 		// ERR_NO_KEY is handled here!
 		return err
 	} else {
-		// TODO: Handle ERR_DEP
-		// reply contains shared.Value == key, vectorTimeStamp, serverId, clientId
-		fmt.Println("ClientGet is successful", reply)
+		// Handle ERR_DEP
+		// reply contains shared.Value == val, vectorTimeStamp, serverId, clientId
+		checkHistoryKey := historyKey{key, clientId}
+		checkHistoryValue, ok := clientHistory[checkHistoryKey]
+		if ok {
+			// Compare reply.Ts[reply.ClientId] to checkHistoryValue.clientLogicalClock
+			if reply.Ts[reply.ClientId] < checkHistoryValue.clientLogicalClock {
+				fmt.Println("Get Failed: ERR_DEP")
+				return errors.New("ERR_DEP")
+			} else {
+				fmt.Println("Get Successful:", key, "->", reply.Val)
+				*retVal = true
+			}
+		} else {
+			// There is no history of reads/writes from this client for key
+			fmt.Println("Get Successful:", key, "->", reply.Val)
+			*retVal = true
+		}
+		// Add this transaction to clientHistory
+		newHistoryValue := historyValue{reply.Val, reply.Ts[reply.ClientId]}
+		clientHistory[checkHistoryKey] = newHistoryValue
 	}
-
 	// If successful
 	return nil
 }

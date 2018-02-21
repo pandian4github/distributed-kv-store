@@ -417,7 +417,6 @@ func put(args []string) error {
 		return err
 	}
 	var reply bool
-	// TODO: Get serverId the server to client map
 	putArgs := shared.PutArgs{key, value, clientId, 0, 0}
 	client.Call("ClientMaster.ClientPut", putArgs, &reply)
 
@@ -447,8 +446,7 @@ func get(args []string) error {
 		return err
 	}
 	var reply bool
-	// TODO: Get serverId from client to server map
-	getArgs := shared.GetArgs{key, clientId, 0}
+	getArgs := shared.GetArgs{key, clientId}
 	client.Call("ClientMaster.ClientGet", getArgs, &reply)
 
 	if reply != true {
