@@ -42,6 +42,7 @@ var shutDown = false
 
 // Listener object to listen to other servers
 var serverListener net.Listener
+var clientListener net.Listener
 
 // Flag to check if data is received from all other servers during a stabilize call
 var dataReceivedFrom = map[int]shared.StabilizeDataPacket {}
@@ -391,6 +392,8 @@ func listenToMaster() error {
 
 	log.Println("Closing serverListener..")
 	serverListener.Close()
+	log.Println("Closing clientListener..")
+	clientListener.Close()
 
 	return nil
 }
@@ -552,13 +555,37 @@ func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
 
 func listenToClients() error {
 	defer waitGroup.Done()
-	//portToListen := basePort + 2
+	portToListen := thisBasePort + 2
 
-	return nil
-}
+	serverClient := new(ServerClient)
+	rpcServer := rpc.NewServer()
+	log.Println("Registering ServerClient..")
+	rpcServer.RegisterName("ServerClient", serverClient)
 
-func talkToServers() error {
-	defer waitGroup.Done()
+	log.Println("Listening to clients on port", portToListen)
+	var e error
+	clientListener, e = net.Listen("tcp", util.LOCALHOST_PREFIX + strconv.Itoa(portToListen))
+	if e != nil {
+		log.Fatal(e)
+	}
+	defer clientListener.Close()
+
+	log.Println("Accepting connections from the client listener in address", clientListener.Addr())
+
+	for {
+		if shutDown {
+			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			log.Println("Shutting down listen to clients thread..")
+			break
+		}
+		log.Println("Listening to connection from the clients..")
+		conn, err := clientListener.Accept()
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		rpcServer.ServeConn(conn) // synchronous call required?
+	}
 
 	return nil
 }
@@ -657,12 +684,11 @@ func main() {
 	cleanupStabilize()
 
 	// since we are starting three threads
-	waitGroup.Add(4)
+	waitGroup.Add(3)
 
 	go listenToMaster()
 	go listenToServers()
 	go listenToClients()
-	go talkToServers()
 
 /*	for i := 0; i < 10; i++ {
 		go print(serverId, basePort, i)
