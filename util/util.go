@@ -17,7 +17,7 @@ const LOCALHOST_PREFIX = "localhost:"
 const (
 	HAPPENED_BEFORE = 0
 	HAPPENED_AFTER = 1
-	CONCURRENT
+	CONCURRENT = 2
 )
 
 func TotalOrderOfEvents(ts1 map[int]int, s1 int, ts2 map[int]int, s2 int) int {

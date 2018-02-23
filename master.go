@@ -181,22 +181,6 @@ func killServer(args []string) error {
 		}
 	}
 
-	// HACK - explicitly giving the victim server a RPC call to kill the process
-	//client, err := getMasterRpcClient(serverId)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//
-	//log.Println("Explicitly killing the server again by a RPC call..")
-	//var reply bool
-	//removeArgs := &shared.RemoveServerArgs{ServerId:serverId}
-	//client.Call("ServerMaster.RemoveServer", removeArgs, &reply)
-	//if reply {
-	//	log.Println("Successfully killed.")
-	//} else {
-	//	log.Fatal("Reply status is false. Kill failed.")
-	//}
-
 	// If server is successfully killed, remove it from active list and portMapping
 	delete(portMapping, serverId)
 	//isNodeAlive[serverId] = false
@@ -224,15 +208,24 @@ func joinClient(args []string) error {
 	portMapping[clientId] = basePort
 	nodeType[clientId] = NODE_CLIENT
 
-	/*
-	Here goes the code to start a client with the basePort and serverId as the parameters.
-	*/
+	logFileName := "logs/client" + strconv.Itoa(clientId) + ".log"
+	log.Println("Starting a go process for client", clientId, "with stdout", logFileName)
 
-	//isNodeAlive[clientId] = true
+	cmd := exec.Command("go", "run", "client.go", strconv.Itoa(clientId),
+		strconv.Itoa(serverId), strconv.Itoa(portMapping[serverId]), strconv.Itoa(basePort))
+
+	// TODO: need to close this file somewhere
+	out, err := os.Create(logFileName)
+	if err != nil {
+		return nil
+	}
+	cmd.Stdout = out
+	cmd.Stderr = out
+
+	cmd.Start()
 
 	return nil
 }
-
 
 /*
 Remove server information from client
@@ -288,7 +281,7 @@ func addConnectionBetweenClientServer(clientId int, serverId int) error {
 		return err
 	}
 
-	log.Println("Adding server information of", serverId, "to server", clientId)
+	log.Println("Adding server information of", serverId, "to client", clientId)
 	var reply bool
 	args := &shared.ClientServerConnectionArgs{ServerId:serverId, ServerBasePort:portMapping[serverId]}
 	client.Call("ClientMaster.CreateConnection", args, &reply)
@@ -334,6 +327,7 @@ func breakConnection(args []string) error {
 	if err != nil {
 		return err
 	}
+	//log.Println(portMapping)
 
 	if _, ok1 := portMapping[nodeId1]; ok1 {
 		if _, ok2 := portMapping[nodeId2]; ok2 {
@@ -351,7 +345,7 @@ func breakConnection(args []string) error {
 					return err
 				}
 			} else { // connection between a server and a client
-				if(nodeType[nodeId1] == NODE_CLIENT) {
+				if nodeType[nodeId1] == NODE_CLIENT {
 					removeConnectionBetweenClientServer(nodeId1, nodeId2)
 				} else {
 					removeConnectionBetweenClientServer(nodeId2, nodeId1)
@@ -479,7 +473,10 @@ func put(args []string) error {
 	}
 	var reply bool
 	putArgs := shared.MasterToClientPutArgs{key, value}
-	client.Call("ClientMaster.ClientPut", putArgs, &reply)
+	err = client.Call("ClientMaster.ClientPut", putArgs, &reply)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if reply != true {
 		log.Fatal("ClientPut was not successful!")
@@ -507,7 +504,10 @@ func get(args []string) error {
 		return err
 	}
 	var reply bool
-	client.Call("ClientMaster.ClientGet", key, &reply)
+	err = client.Call("ClientMaster.ClientGet", key, &reply)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if reply != true {
 		log.Fatal("ClientGet was not successful")

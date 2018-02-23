@@ -44,6 +44,8 @@ var shutDown = false
 var serverListener net.Listener
 var clientListener net.Listener
 
+var mutex = &sync.Mutex{}
+
 // Flag to check if data is received from all other servers during a stabilize call
 var dataReceivedFrom = map[int]shared.StabilizeDataPacket {}
 var dbReceivedFrom = map[int]DB {}
@@ -173,6 +175,7 @@ func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
 
 func collateAndResolveConflicts() error {
 	// Updating persistedDb after resolving conflicts from the other server's updates
+	dbReceivedFrom[thisServerId] = inFlightDb
 	for _, partialDB := range dbReceivedFrom {
 		for key, currValue := range partialDB {
 			prevValue, ok := persistedDb[key]
@@ -187,7 +190,7 @@ func collateAndResolveConflicts() error {
 		}
 	}
 	// Updating persistedDb after resolving conflicts from the updates to this server
-	for key, currValue := range inFlightDb {
+/*	for key, currValue := range inFlightDb {
 		prevValue, ok := persistedDb[key]
 		if ok {
 			ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, currValue.Ts, currValue.ServerId)
@@ -197,13 +200,21 @@ func collateAndResolveConflicts() error {
 		} else {
 			persistedDb[key] = currValue
 		}
-	}
+	}*/
 	// After all the updates in flight are persisted clear the inFlightDB
 	inFlightDb = make(DB)
 	return nil
 }
 
 func sendMyDataToNeighbors() error {
+	mutex.Lock()
+	for serverId := range otherServers {
+		if isDataReceivedFrom[serverId] != 1 {
+			isDataReceivedFrom[serverId] = 0
+		}
+	}
+	mutex.Unlock()
+
 	for serverId := range otherServers {
 		client, err := getServerRpcClient(serverId)
 		if err != nil {
@@ -233,6 +244,8 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 		if _, ok := propagatedToServer[neighbor]; !ok {
 			propagatedToServer[neighbor] = map[int]int {}
 		}
+
+		mutex.Lock()
 		neighborConnections := allConnections[neighbor]
 		for k, v := range dataReceivedFrom {
 			_, neighborConnected := neighborConnections[k]
@@ -240,6 +253,8 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 				toPropagatePackets[k] = v
 			}
 		}
+		mutex.Unlock()
+
 		if len(toPropagatePackets) > 0 {
 			toPropagatePacketsAll[neighbor] = toPropagatePackets
 		}
@@ -290,7 +305,9 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	intervalBetweenRetrySecs := 0.5
 	for {
 		updatesToPropagate, err := getUpdatesToPropagate()
-		log.Println("Transitive updates to propagate: ", updatesToPropagate)
+		if len(updatesToPropagate) > 0 {
+			log.Println("Transitive updates to propagate: ", updatesToPropagate)
+		}
 		if err != nil {
 			return err
 		}
@@ -419,10 +436,13 @@ func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDat
 func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, reply *bool) error {
 	for serverId, dataPacket := range request {
 		log.Println("Received data packet from server", serverId)
+		mutex.Lock()
 		if isDataReceivedFrom[serverId] == 0 {
 			isDataReceivedFrom[serverId] = 1
+
 			dataReceivedFrom[serverId] = dataPacket
 			dbReceivedFrom[serverId] = dataPacket.InFlightDB // Copy by reference. Should we copy by value?
+			//mutex.Unlock()
 
 			//for k, v := range dataPacket.InFlightDB {
 			//	dataReceivedFrom[serverId][k] = v
@@ -438,15 +458,21 @@ func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, repl
 					isDataReceivedFrom[k] = 0
 				}
 			}
+			//mutex.Lock()
 			allConnections[serverId] = connections
+			//mutex.Unlock()
+
 			numServersReceivedFrom++
 			log.Println("isDataReceivedFrom:", isDataReceivedFrom, "numServersReceivedFrom:", numServersReceivedFrom)
 		}
+		mutex.Unlock()
 	}
+	mutex.Lock()
 	if numServersReceivedFrom >= len(isDataReceivedFrom) {
 		log.Println("Received data from all connected servers..")
 		receivedFromAllServers = true
 	}
+	mutex.Unlock()
 
 	*reply = true
 	return nil
@@ -510,21 +536,25 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *sh
 	if thisVecTs[clientId] < clientClock {
 		thisVecTs[clientId] = clientClock
 	}
+	log.Println("ServerPut.. ", thisVecTs)
 
 	// Update/Write to the inFlightDb
 	newValue := shared.Value{value, thisVecTs, thisServerId, clientId}
 	prevValue, exists := inFlightDb[key]
 	if exists == false {
 		// Create a new entry into the inFlightDb
+		log.Println("Creating new key..")
 		inFlightDb[key] = newValue
 		*reply = newValue.Ts
 	} else {
 		// Compare the timeStamps of the values and either update or ignore
 		ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, newValue.Ts, newValue.ServerId)
 		if ordering == util.HAPPENED_BEFORE {
+			log.Println("Updating the value..")
 			inFlightDb[key] = newValue
 			*reply = newValue.Ts
 		} else {
+			log.Println("Using existing value..")
 			*reply = prevValue.Ts
 		}
 	}
@@ -537,6 +567,7 @@ func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
 	// Increment the clock on receiving a get request from client
 	incrementMyClock()
 
+	log.Println("Received get request for key", key)
 	// Check for the key in inFlightDb first.
 	value, ok := inFlightDb[key]
 	if ok {
@@ -550,7 +581,10 @@ func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
 		return nil
 	}
 	// key is not found in both inFlightDb and persistedDb
-	return errors.New("ERR_NO_KEY")
+	reply.Val = "ERR_NO_KEY"
+	reply.ServerId = -1
+	reply.ClientId = -1
+	return nil
 }
 
 func listenToClients() error {

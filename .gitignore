@@ -20,4 +20,4 @@
 logs/
 
 # commands input file
-commands.txt
+commands*.txt
