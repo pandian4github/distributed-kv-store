@@ -231,7 +231,6 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 			_, neighborConnected := neighborConnections[k]
 			if propagatedToServer[neighbor][k] == 0 && !neighborConnected {
 				toPropagatePackets[k] = v
-				propagatedToServer[neighbor][k] = 1 // TODO Ideally this should be done after the RPC calls succeed!
 			}
 		}
 		toPropagatePacketsAll[neighbor] = toPropagatePackets
@@ -297,6 +296,8 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			log.Println("Sending transitive updates to server", neighbor, "with", len(dataPackets), "other server information..")
 
 			var reply bool
+			//TODO probably add a retry logic here because there are high chances for multiple servers to be propagating
+			// data to the server at the same time in which case on will fail
 			client.Call("ServerServer.SendDataPackets", dataPackets, &reply)
 			if reply {
 				log.Println("Successfully sent data pakcets to server", serverId)
@@ -304,6 +305,10 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 				log.Println("ERROR: Return status is false while sending data packets to server", serverId)
 			}
 
+			// Update the propagated information
+			for k := range dataPackets {
+				propagatedToServer[neighbor][k] = 1
+			}
 		}
 		time.Sleep(time.Second * time.Duration(intervalBetweenRetrySecs))
 	}
