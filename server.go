@@ -40,6 +40,9 @@ var waitGroup sync.WaitGroup
 // Flag which is set during a killServer
 var shutDown = false
 
+// Listener object to listen to other servers
+var serverListener net.Listener
+
 // Flag to check if data is received from all other servers during a stabilize call
 var dataReceivedFrom = map[int]shared.StabilizeDataPacket {}
 var dbReceivedFrom = map[int]DB {}
@@ -57,9 +60,10 @@ var persistedDb = DB {} // the DB after the last stabilize call
 var inFlightDb = DB {} // the DB which is not yet stabilized with other server nodes
 
 func getServerRpcClient(serverId int) (*rpc.Client, error) {
-	if client, ok := serverRpcClientMap[serverId]; ok {
-		return client, nil
-	}
+	// Commenting because using open connection led to some issues
+	//if client, ok := serverRpcClientMap[serverId]; ok {
+	//	return client, nil
+	//}
 	if hostBasePortPair, ok := otherServers[serverId]; ok {
 		basePortStr := strings.Split(hostBasePortPair,  ":")[1]
 		basePort, err := strconv.Atoi(basePortStr)
@@ -73,7 +77,7 @@ func getServerRpcClient(serverId int) (*rpc.Client, error) {
 			return nil, err
 		}
 		client := rpc.NewClient(conn)
-		serverRpcClientMap[serverId] = client
+		//serverRpcClientMap[serverId] = client
 		return client, nil
 	} else {
 		return nil, errors.New("port information not found for the server " + strconv.Itoa(serverId))
@@ -216,6 +220,7 @@ func sendMyDataToNeighbors() error {
 		} else {
 			log.Println("ERROR: Return status is false while sending data packets to server", serverId)
 		}
+		client.Close()
 	}
 	return nil
 }
@@ -230,11 +235,13 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 		neighborConnections := allConnections[neighbor]
 		for k, v := range dataReceivedFrom {
 			_, neighborConnected := neighborConnections[k]
-			if propagatedToServer[neighbor][k] == 0 && !neighborConnected {
+			if propagatedToServer[neighbor][k] == 0 && !neighborConnected && neighbor != k {
 				toPropagatePackets[k] = v
 			}
 		}
-		toPropagatePacketsAll[neighbor] = toPropagatePackets
+		if len(toPropagatePackets) > 0 {
+			toPropagatePacketsAll[neighbor] = toPropagatePackets
+		}
 	}
 	return toPropagatePacketsAll, nil
 }
@@ -257,10 +264,11 @@ func updateClockAfterStabilize() {
 
 func cleanupStabilize() {
 	// Resetting the flags and count at the end of stabilize
-	numServersReceivedFrom = 0
+	numServersReceivedFrom = 1 // this server's information
 	dataReceivedFrom = make(shared.StabilizeDataPackets)
 	dbReceivedFrom = make(map[int]DB)
 	isDataReceivedFrom = make(map[int]int)
+	isDataReceivedFrom[thisServerId] = 1
 	allConnections = make(map[int]map[int]string)
 	receivedFromAllServers = false
 	propagatedToServer = make(map[int]map[int]int)
@@ -281,6 +289,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	intervalBetweenRetrySecs := 0.5
 	for {
 		updatesToPropagate, err := getUpdatesToPropagate()
+		log.Println("Transitive updates to propagate: ", updatesToPropagate)
 		if err != nil {
 			return err
 		}
@@ -310,6 +319,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			for k := range dataPackets {
 				propagatedToServer[neighbor][k] = 1
 			}
+			client.Close()
 		}
 		time.Sleep(time.Second * time.Duration(intervalBetweenRetrySecs))
 	}
@@ -379,6 +389,9 @@ func listenToMaster() error {
 		//log.Println("Connection request served. ")
 	}
 
+	log.Println("Closing serverListener..")
+	serverListener.Close()
+
 	return nil
 }
 
@@ -386,7 +399,8 @@ func listenToMaster() error {
 Implementation of different RPC methods exported by server to other servers
 */
 type ServerServer int
-func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataResponse) error {
+func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDataResponse) error {
+	log.Println("Got bootstrap request from server", serverId)
 	response.PersistedDb = map[string]shared.Value {}
 	response.VecTs = shared.Clock {}
 	for k, v := range persistedDb {
@@ -395,11 +409,13 @@ func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataRe
 	for k, v := range thisVecTs {
 		response.VecTs[k] = v
 	}
+	log.Println("Bootstrap request complete, data copied to response object.")
 	return nil
 }
 
 func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, reply *bool) error {
 	for serverId, dataPacket := range request {
+		log.Println("Received data packet from server", serverId)
 		if isDataReceivedFrom[serverId] == 0 {
 			isDataReceivedFrom[serverId] = 1
 			dataReceivedFrom[serverId] = dataPacket
@@ -409,6 +425,7 @@ func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, repl
 			//	dataReceivedFrom[serverId][k] = v
 			//}
 
+			log.Println("Updating the vector clock according to vector clock of server", serverId)
 			updateClockDuringStabilize(dataPacket.VecTs)
 			connections := map[int]string {}
 			for k, v := range dataPacket.Peers {
@@ -420,9 +437,11 @@ func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, repl
 			}
 			allConnections[serverId] = connections
 			numServersReceivedFrom++
+			log.Println("isDataReceivedFrom:", isDataReceivedFrom, "numServersReceivedFrom:", numServersReceivedFrom)
 		}
 	}
 	if numServersReceivedFrom >= len(isDataReceivedFrom) {
+		log.Println("Received data from all connected servers..")
 		receivedFromAllServers = true
 	}
 
@@ -440,13 +459,14 @@ func listenToServers() error {
 	rpcServer.RegisterName("ServerServer", serverServer)
 
 	log.Println("Listening to servers on port", portToListen)
-	l, e := net.Listen("tcp", util.LOCALHOST_PREFIX + strconv.Itoa(portToListen))
+	var e error
+	serverListener, e = net.Listen("tcp", util.LOCALHOST_PREFIX + strconv.Itoa(portToListen))
 	if e != nil {
 		log.Fatal(e)
 	}
-	defer l.Close()
+	defer serverListener.Close()
 
-	log.Println("Accepting connections from the listener in address", l.Addr())
+	log.Println("Accepting connections from the listener in address", serverListener.Addr())
 
 	for {
 		if shutDown {
@@ -455,7 +475,7 @@ func listenToServers() error {
 			break
 		}
 		log.Println("Listening to connection from the servers..")
-		conn, err := l.Accept()
+		conn, err := serverListener.Accept()
 		if err != nil {
 			log.Fatal(err)
 			return err
@@ -557,13 +577,14 @@ func incrementMyClock() {
 
 func bootstrapFromServer(serverId int) error {
 	client, err := getServerRpcClient(serverId)
+	defer client.Close()
 	if err != nil {
 		return err
 	}
 
 	log.Println("Getting bootstrap data from server", serverId)
 	var reply shared.BootstrapDataResponse
-	client.Call("ServerServer.BootstrapData", 0, &reply)
+	client.Call("ServerServer.BootstrapData", thisServerId, &reply)
 	for k, v := range reply.PersistedDb {
 		persistedDb[k] = v
 	}
@@ -632,6 +653,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	cleanupStabilize()
 
 	// since we are starting three threads
 	waitGroup.Add(4)

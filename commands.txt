@@ -2,6 +2,7 @@ joinServer 0
 joinServer 1
 joinServer 2
 breakConnection 0 2
+stabilize
 killServer 0
 killServer 1
 killServer 2

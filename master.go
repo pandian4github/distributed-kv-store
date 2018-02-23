@@ -342,8 +342,14 @@ func breakConnection(args []string) error {
 			}
 
 			if nodeType[nodeId1] == nodeType[nodeId2] { // connection between two servers
-				removeConnectionBetweenServers(nodeId1, nodeId2)
-				removeConnectionBetweenServers(nodeId2, nodeId1)
+				err := removeConnectionBetweenServers(nodeId1, nodeId2)
+				if err != nil {
+					return err
+				}
+				err = removeConnectionBetweenServers(nodeId2, nodeId1)
+				if err != nil {
+					return err
+				}
 			} else { // connection between a server and a client
 				if(nodeType[nodeId1] == NODE_CLIENT) {
 					removeConnectionBetweenClientServer(nodeId1, nodeId2)
