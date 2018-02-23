@@ -119,6 +119,7 @@ func (t *ServerMaster) RemoveServer(removeServer *shared.RemoveServerArgs, statu
 	serverId := removeServer.ServerId
 
 	if thisServerId == serverId { // Kill this server
+		// TODO Should also kill the other listening threads, otherwise the ports are blocked for sometime (make the listener objects global?)
 		shutDown = true
 		log.Println("Marked shutDown flag..")
 	} else { // Remove the server details from the map
@@ -300,9 +301,9 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			// data to the server at the same time in which case on will fail
 			client.Call("ServerServer.SendDataPackets", dataPackets, &reply)
 			if reply {
-				log.Println("Successfully sent data pakcets to server", serverId)
+				log.Println("Successfully sent data pakcets to server", neighbor)
 			} else {
-				log.Println("ERROR: Return status is false while sending data packets to server", serverId)
+				log.Println("ERROR: Return status is false while sending data packets to server", neighbor)
 			}
 
 			// Update the propagated information
@@ -387,6 +388,7 @@ Implementation of different RPC methods exported by server to other servers
 type ServerServer int
 func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataResponse) error {
 	response.PersistedDb = map[string]shared.Value {}
+	response.VecTs = shared.Clock {}
 	for k, v := range persistedDb {
 		response.PersistedDb[k] = v
 	}
