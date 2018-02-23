@@ -41,8 +41,13 @@ var waitGroup sync.WaitGroup
 var shutDown = false
 
 // Flag to check if data is received from all other servers during a stabilize call
-var dataReceivedFrom = map[int]DB {}
+var dataReceivedFrom = map[int]shared.StabilizeDataPacket {}
+var dbReceivedFrom = map[int]DB {}
+var isDataReceivedFrom = map[int]int {}
 var numServersReceivedFrom = 0
+var allConnections = map[int]map[int]string{}
+var receivedFromAllServers bool
+var propagatedToServer = map[int]map[int]int {} // {x: y} to denote if y's data is already propagated to x
 
 // Core data structures which hold the actual data of the key-value store
 type DB map[string]shared.Value
@@ -161,7 +166,7 @@ func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
 
 func collateAndResolveConflicts() error {
 	// Updating persistedDb after resolving conflicts from the other server's updates
-	for _, partialDB := range dataReceivedFrom {
+	for _, partialDB := range dbReceivedFrom {
 		for key, currValue := range partialDB {
 			prevValue, ok := persistedDb[key]
 			if ok {
@@ -191,18 +196,7 @@ func collateAndResolveConflicts() error {
 	return nil
 }
 
-func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
-	log.Println("Stabilize call received from master..")
-
-	defer func() {
-		// Resetting the flags and count at the end of stabilize
-		numServersReceivedFrom = 0
-		dataReceivedFrom = make(map[int]DB)
-
-	}()
-
-
-	// First send this server's inFlightData to the other servers
+func sendMyDataToNeighbors() error {
 	for serverId := range otherServers {
 		client, err := getServerRpcClient(serverId)
 		if err != nil {
@@ -210,18 +204,94 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 		}
 
 		log.Println("Sending inFlightData to server", serverId)
-		var args = shared.StabilizeDbRequest{ServerId:thisServerId, InFlightDB:inFlightDb, VecTs:thisVecTs}
+		var thisServerDataPacket = shared.StabilizeDataPacket{InFlightDB:inFlightDb, VecTs:thisVecTs, Peers:otherServers}
+		var args = shared.StabilizeDataPackets{thisServerId:thisServerDataPacket}
+
 		var reply bool
-		client.Call("ServerServer.SendInFlightData", &args, &reply)
+		client.Call("ServerServer.SendDataPackets", args, &reply)
 		if reply {
-			log.Println("Successfully sent inFlightData to server", serverId)
+			log.Println("Successfully sent data pakcets to server", serverId)
 		} else {
-			log.Println("ERROR: Return status is false while sending inFlightData to server", serverId)
+			log.Println("ERROR: Return status is false while sending data packets to server", serverId)
 		}
 	}
+	return nil
+}
+
+func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
+	toPropagatePacketsAll := map[int]shared.StabilizeDataPackets {}
+	for neighbor := range otherServers {
+		toPropagatePackets := shared.StabilizeDataPackets {}
+		if _, ok := propagatedToServer[neighbor]; !ok {
+			propagatedToServer[neighbor] = map[int]int {}
+		}
+		neighborConnections := allConnections[neighbor]
+		for k, v := range dataReceivedFrom {
+			_, neighborConnected := neighborConnections[k]
+			if propagatedToServer[neighbor][k] == 0 && !neighborConnected {
+				toPropagatePackets[k] = v
+				propagatedToServer[neighbor][k] = 1 // TODO Ideally this should be done after the RPC calls succeed!
+			}
+		}
+		toPropagatePacketsAll[neighbor] = toPropagatePackets
+	}
+	return toPropagatePacketsAll, nil
+}
+
+func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
+	log.Println("Stabilize call received from master..")
+
+	defer func() {
+		// Resetting the flags and count at the end of stabilize
+		numServersReceivedFrom = 0
+		dataReceivedFrom = make(shared.StabilizeDataPackets)
+		dbReceivedFrom = make(map[int]DB)
+		isDataReceivedFrom = make(map[int]int)
+		allConnections = make(map[int]map[int]string)
+		receivedFromAllServers = false
+	}()
+
+	// First send this server's inFlightData to the other servers
+	err := sendMyDataToNeighbors()
+	if err != nil {
+		return err
+	}
+
+	// Loop to keep sending the neighbors' transitive updates to other neighbors
+	intervalBetweenRetrySecs := 0.5
+	for {
+		updatesToPropagate, err := getUpdatesToPropagate()
+		if err != nil {
+			return err
+		}
+		// If no more updates to send to neighbors and if updates received from all servers
+		if len(updatesToPropagate) == 0 && receivedFromAllServers {
+			break
+		}
+		for neighbor, dataPackets := range updatesToPropagate {
+			client, err := getServerRpcClient(neighbor)
+			if err != nil {
+				return err
+			}
+
+			log.Println("Sending transitive updates to server", neighbor, "with", len(dataPackets), "other server information..")
+
+			var reply bool
+			client.Call("ServerServer.SendDataPackets", dataPackets, &reply)
+			if reply {
+				log.Println("Successfully sent data pakcets to server", serverId)
+			} else {
+				log.Println("ERROR: Return status is false while sending data packets to server", serverId)
+			}
+
+		}
+		time.Sleep(time.Second * time.Duration(intervalBetweenRetrySecs))
+	}
+
+	log.Println("Received updates from all the connected servers.. Collating and resolving the conflicts.. ")
 
 	// Now, wait until all other servers have sent their inFlightDbs to this server
-	retryTimeSecs := 0.5
+/*	retryTimeSecs := 0.5
 	retryLimit := 20
 	retryAttempt := 0
 	numOtherServers := len(otherServers)
@@ -236,9 +306,9 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			return errors.New("did not get the updates from all the servers after " + strconv.Itoa(retryLimit) + " retries")
 		}
 	}
-
+*/
 	// Received updates from all other servers, now collate them and store to persistedDb and clear inFlightDb
-	err := collateAndResolveConflicts()
+	err = collateAndResolveConflicts()
 	if err != nil {
 		return err
 	}
@@ -302,15 +372,31 @@ func (t *ServerServer) BootstrapData(dummy int, response *shared.BootstrapDataRe
 	return nil
 }
 
-func (t *ServerServer) SendInFlightData(request *shared.StabilizeDbRequest, reply *bool) error {
-	serverId := request.ServerId
+func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, reply *bool) error {
+	for serverId, dataPacket := range request {
+		if isDataReceivedFrom[serverId] == 0 {
+			isDataReceivedFrom[serverId] = 1
+			dataReceivedFrom[serverId] = dataPacket
+			dbReceivedFrom[serverId] = dataPacket.InFlightDB // Copy by reference. Should we copy by value?
 
-	if _, ok := dataReceivedFrom[serverId]; !ok {
-		dataReceivedFrom[serverId] = DB {}
-		for k, v := range request.InFlightDB {
-			dataReceivedFrom[serverId][k] = v
+			//for k, v := range dataPacket.InFlightDB {
+			//	dataReceivedFrom[serverId][k] = v
+			//}
+
+			connections := map[int]string {}
+			for k, v := range dataPacket.Peers {
+				connections[k] = v
+				// k is the neighbor's neighbor
+				if isDataReceivedFrom[k] != 1 {
+					isDataReceivedFrom[k] = 0
+				}
+			}
+			allConnections[serverId] = connections
+			numServersReceivedFrom++
 		}
-		numServersReceivedFrom++
+	}
+	if numServersReceivedFrom >= len(isDataReceivedFrom) {
+		receivedFromAllServers = true
 	}
 
 	*reply = true

@@ -51,4 +51,12 @@ type StabilizeDbRequest struct {
 	InFlightDB map[string]Value
 }
 
+type StabilizeDataPacket struct {
+	VecTs Clock
+	InFlightDB map[string]Value
+	Peers map[int]string // otherServers details of ServerId
+}
+
+type StabilizeDataPackets map[int]StabilizeDataPacket
+
 type Clock map[int]int
