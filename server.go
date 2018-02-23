@@ -48,6 +48,7 @@ var numServersReceivedFrom = 0
 var allConnections = map[int]map[int]string{}
 var receivedFromAllServers bool
 var propagatedToServer = map[int]map[int]int {} // {x: y} to denote if y's data is already propagated to x
+var clockDuringStabilize = shared.Clock {}
 
 // Core data structures which hold the actual data of the key-value store
 type DB map[string]shared.Value
@@ -238,18 +239,37 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 	return toPropagatePacketsAll, nil
 }
 
+func updateClockDuringStabilize(clock shared.Clock) {
+	for k, v := range clock {
+		if clockDuringStabilize[k] < v {
+			clockDuringStabilize[k] = v
+		}
+	}
+}
+
+func updateClockAfterStabilize() {
+	updateClockDuringStabilize(thisVecTs)
+	for k, v := range clockDuringStabilize {
+		thisVecTs[k] = v
+	}
+	incrementMyClock()
+}
+
+func cleanupStabilize() {
+	// Resetting the flags and count at the end of stabilize
+	numServersReceivedFrom = 0
+	dataReceivedFrom = make(shared.StabilizeDataPackets)
+	dbReceivedFrom = make(map[int]DB)
+	isDataReceivedFrom = make(map[int]int)
+	allConnections = make(map[int]map[int]string)
+	receivedFromAllServers = false
+	propagatedToServer = make(map[int]map[int]int)
+}
+
 func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	log.Println("Stabilize call received from master..")
 
-	defer func() {
-		// Resetting the flags and count at the end of stabilize
-		numServersReceivedFrom = 0
-		dataReceivedFrom = make(shared.StabilizeDataPackets)
-		dbReceivedFrom = make(map[int]DB)
-		isDataReceivedFrom = make(map[int]int)
-		allConnections = make(map[int]map[int]string)
-		receivedFromAllServers = false
-	}()
+	defer cleanupStabilize()
 
 	// First send this server's inFlightData to the other servers
 	err := sendMyDataToNeighbors()
@@ -312,8 +332,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	if err != nil {
 		return err
 	}
-
-	//time.Sleep(time.Second * time.Duration(1 + thisServerId))
+	updateClockAfterStabilize()
 
 	*status = true
 	return nil
@@ -383,6 +402,7 @@ func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, repl
 			//	dataReceivedFrom[serverId][k] = v
 			//}
 
+			updateClockDuringStabilize(dataPacket.VecTs)
 			connections := map[int]string {}
 			for k, v := range dataPacket.Peers {
 				connections[k] = v
