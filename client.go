@@ -36,7 +36,7 @@ type historyKey struct {
 
 type historyValue struct {
 	value string
-	clientLogicalClock int
+	vectorTimeStamp shared.Clock
 }
 
 var clientHistory = make(map[historyKey]historyValue)
@@ -129,9 +129,9 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 	if serverId == 0 {
 		return errors.New("connection does not exist")
 	}
- 	putArgs := shared.ClientToServerPutArgs{key, value, thisClientId, clientLogicalClock}
- 	// reply contains vectorTimeStamp corresponding to this transaction
- 	var reply shared.Clock
+	putArgs := shared.ClientToServerPutArgs{key, value, thisClientId, clientLogicalClock}
+	// reply contains vectorTimeStamp corresponding to this transaction
+	var reply shared.Clock
 	serverToTalk, err := getClientRpcServer(serverId)
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		// reply contains the timestamp recorded at the server for this put call
 		fmt.Println("Put successful")
 		currKey := historyKey{key, thisClientId}
-		currVal := historyValue{value, reply[thisClientId]}
+		currVal := historyValue{value, reply}
 		// If some value with same key, clientId pair exists in clientHistory,
 		// we can satisfy both READ_YOUR_WRITES or MONOTONIC_READS by just replacing it
 		clientHistory[currKey] = currVal
@@ -175,19 +175,30 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 		// ERR_NO_KEY is handled here!
 		return err
 	} else {
-		// TODO: Need vectorTS comparision with entries in clientHistory
 		// Handle ERR_DEP
 		// reply contains shared.Value == val, vectorTimeStamp, serverId, clientId
 		checkHistoryKey := historyKey{key, thisClientId}
 		checkHistoryValue, ok := clientHistory[checkHistoryKey]
 		if ok {
-			// Compare reply.Ts[reply.ClientId] to checkHistoryValue.clientLogicalClock
-			if reply.Ts[reply.ClientId] < checkHistoryValue.clientLogicalClock {
+			// Get succeeds if the event clearly happened after the event in client history
+			//           or if the concurrent events are ordered at least at this client
+			ordering := util.HappenedBefore(reply.Ts, checkHistoryValue.vectorTimeStamp)
+			if ordering == util.HAPPENED_BEFORE {
+				// reply has stale data
 				fmt.Println("Get Failed: ERR_DEP")
 				return errors.New("ERR_DEP")
-			} else {
+			} else if ordering == util.HAPPENED_AFTER {
 				fmt.Println("Get Successful:", key, "->", reply.Val)
 				*retVal = true
+			} else if ordering == util.CONCURRENT {
+				if reply.Ts[reply.ClientId] < checkHistoryValue.vectorTimeStamp[reply.ClientId] {
+					// reply has stale data (reply.clientId and thisClientId are same!)
+					fmt.Println("Get Failed: ERR_DEP")
+					return errors.New("ERR_DEP")
+				} else {
+					fmt.Println("Get Successful:", key, "->", reply.Val)
+					*retVal = true
+				}
 			}
 		} else {
 			// There is no history of reads/writes from this client for key
@@ -195,7 +206,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 			*retVal = true
 		}
 		// Add this transaction to clientHistory
-		newHistoryValue := historyValue{reply.Val, reply.Ts[reply.ClientId]}
+		newHistoryValue := historyValue{reply.Val, reply.Ts}
 		clientHistory[checkHistoryKey] = newHistoryValue
 	}
 	// If successful
@@ -260,4 +271,3 @@ func main() {
 	go clientListenToMaster()
 	clientWaitGroup.Wait()
 }
-
