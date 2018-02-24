@@ -46,6 +46,11 @@ var clientListener net.Listener
 
 var mutex = &sync.Mutex{}
 
+type ServerPacketPair struct {
+	ServerId int
+	DataPacketId int // data packet belonging to the server
+}
+
 // Flag to check if data is received from all other servers during a stabilize call
 var dataReceivedFrom = map[int]shared.StabilizeDataPacket {}
 var dbReceivedFrom = map[int]DB {}
@@ -54,6 +59,7 @@ var numServersReceivedFrom = 0
 var allConnections = map[int]map[int]string{}
 var propagatedToServer = map[int]map[int]int {} // {x: y} to denote if y's data is already propagated to x
 var clockDuringStabilize = shared.Clock {}
+var serverHasDataPacketMap = map[ServerPacketPair]int {}
 
 // Core data structures which hold the actual data of the key-value store
 type DB map[string]shared.Value
@@ -217,7 +223,7 @@ func sendMyDataToNeighbors() error {
 
 		log.Println("Sending inFlightData to server", serverId)
 		var thisServerDataPacket = shared.StabilizeDataPacket{InFlightDB:inFlightDb, VecTs:thisVecTs, Peers:otherServers}
-		var args = shared.StabilizeDataPackets{thisServerId:thisServerDataPacket}
+		var args = shared.SendDataPacketsRequest{ServerId:thisServerId, DataPackets:shared.StabilizeDataPackets{thisServerId:thisServerDataPacket}}
 
 		var reply bool
 		client.Call("ServerServer.SendDataPackets", args, &reply)
@@ -241,10 +247,11 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 
 		mutex.Lock()
 		neighborConnections := allConnections[neighbor]
-		for k, v := range dataReceivedFrom {
-			_, neighborConnected := neighborConnections[k]
-			if propagatedToServer[neighbor][k] == 0 && !neighborConnected && neighbor != k {
-				toPropagatePackets[k] = v
+		for dataPacketId, dataPacket := range dataReceivedFrom {
+			_, neighborConnected := neighborConnections[dataPacketId]
+			if propagatedToServer[neighbor][dataPacketId] == 0 && !neighborConnected && neighbor != dataPacketId &&
+				serverHasDataPacketMap[ServerPacketPair{ServerId:neighbor, DataPacketId:dataPacketId}] == 0 {
+				toPropagatePackets[dataPacketId] = dataPacket
 			}
 		}
 		mutex.Unlock()
@@ -282,6 +289,7 @@ func cleanupStabilize() {
 	isDataReceivedFrom[thisServerId] = 1
 	allConnections = make(map[int]map[int]string)
 	propagatedToServer = make(map[int]map[int]int)
+	serverHasDataPacketMap = make(map[ServerPacketPair]int)
 }
 
 func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
@@ -325,9 +333,10 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			log.Println("Sending transitive updates to server", neighbor, "with", len(dataPackets), "other server information..")
 
 			var reply bool
+			args := shared.SendDataPacketsRequest{ServerId:thisServerId, DataPackets:dataPackets}
 			//TODO probably add a retry logic here because there are high chances for multiple servers to be propagating
 			// data to the server at the same time in which case on will fail
-			client.Call("ServerServer.SendDataPackets", dataPackets, &reply)
+			client.Call("ServerServer.SendDataPackets", args, &reply)
 			if reply {
 				log.Println("Successfully sent data packets to server", neighbor)
 			} else {
@@ -416,14 +425,16 @@ func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDat
 	return nil
 }
 
-func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, reply *bool) error {
+func (t *ServerServer) SendDataPackets(request shared.SendDataPacketsRequest, reply *bool) error {
 	mutex.Lock()
-	for serverId, dataPacket := range request {
-		log.Println("Received data packet of server", serverId, "dataPacket: ", dataPacket)
+	dataPackets := request.DataPackets
+	for serverId, dataPacket := range dataPackets {
+		log.Println("Received data packet of server", serverId, "from server", request.ServerId, "dataPacket: ", dataPacket)
 		if thisVecTs[serverId] >= dataPacket.VecTs[serverId] {
 			log.Println("Ignoring data packet of server", serverId, "with ts ", dataPacket.VecTs, "my ts", thisVecTs)
 			continue
 		}
+		serverHasDataPacketMap[ServerPacketPair{ServerId:request.ServerId, DataPacketId:serverId}] = 1
 		if isDataReceivedFrom[serverId] == 0 {
 			isDataReceivedFrom[serverId] = 1
 

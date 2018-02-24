@@ -59,4 +59,9 @@ type StabilizeDataPacket struct {
 
 type StabilizeDataPackets map[int]StabilizeDataPacket
 
+type SendDataPacketsRequest struct {
+	ServerId int
+	DataPackets StabilizeDataPackets
+}
+
 type Clock map[int]int
