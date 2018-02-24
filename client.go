@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"log"
-	"fmt"
 	"strconv"
 	"sync"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"./util"
 	//"strings"
 	"sort"
+	"time"
 )
 
 
@@ -26,6 +26,8 @@ var thisClientId int
 
 // client LogicalClock
 var clientLogicalClock = 0
+
+var clientShutDown = false
 
 type ClientMaster int
 
@@ -96,6 +98,13 @@ func (t *ClientMaster) BreakConnection(removeServer *shared.RemoveServerArgs, st
 		serverId = -1
 	}
 
+	*status = true
+	return nil
+}
+
+func (t *ClientMaster) KillClient(dummy int, status *bool) error {
+	clientShutDown = true
+	log.Println("Marked clientShutDown flag..")
 	*status = true
 	return nil
 }
@@ -243,15 +252,21 @@ func clientListenToMaster() error {
 
 	ln, err := net.Listen("tcp", clientBasePortStr)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 		return err
 	}
 	for {
+		if clientShutDown {
+			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			log.Println("Shutting down listen to master thread..")
+			break
+		}
 		clientMasterConnection, err := ln.Accept()
 		if err != nil {
-			continue
+			log.Fatal(err)
+			return err
 		}
-		go rpc.ServeConn(clientMasterConnection)
+		rpc.ServeConn(clientMasterConnection)
 	}
 
 	return nil

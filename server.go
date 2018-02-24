@@ -38,7 +38,7 @@ var otherServers = map[int]string {}
 var waitGroup sync.WaitGroup
 
 // Flag which is set during a killServer
-var shutDown = false
+var serverShutDown = false
 
 // Listener object to listen to other servers
 var serverListener net.Listener
@@ -126,12 +126,19 @@ func (t *ServerMaster) RemoveServer(removeServer *shared.RemoveServerArgs, statu
 
 	if thisServerId == serverId { // Kill this server
 		// TODO Should also kill the other listening threads, otherwise the ports are blocked for sometime (make the listener objects global?)
-		shutDown = true
-		log.Println("Marked shutDown flag..")
+		serverShutDown = true
+		log.Println("Marked serverShutDown flag..")
 	} else { // Remove the server details from the map
 		log.Println("Removing server", serverId, "from the cluster..")
 		delete(otherServers, serverId)
 	}
+	*status = true
+	return nil
+}
+
+func (t *ServerMaster) KillServer(dummy int, status *bool) error {
+	serverShutDown = true
+	log.Println("Marked serverShutDown flag..")
 	*status = true
 	return nil
 }
@@ -369,21 +376,18 @@ func listenToMaster() error {
 	log.Println("Accepting connections from the listener in address", l.Addr())
 
 	for {
-		if shutDown {
+		if serverShutDown {
 			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to master thread..")
 			break
 		}
 		log.Println("Listening to connection from the master..")
 		conn, err := l.Accept()
-		//stopStabilize = false
 		if err != nil {
 			log.Fatal(err)
 			return err
 		}
-		//log.Println("Serving the connection request..")
 		rpcServer.ServeConn(conn) // synchronous call required?
-		//log.Println("Connection request served. ")
 	}
 
 	log.Println("Closing serverListener..")
@@ -471,7 +475,7 @@ func listenToServers() error {
 	log.Println("Accepting connections from the listener in address", serverListener.Addr())
 
 	for {
-		if shutDown {
+		if serverShutDown {
 			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to servers thread..")
 			break
@@ -576,7 +580,7 @@ func listenToClients() error {
 	log.Println("Accepting connections from the client listener in address", clientListener.Addr())
 
 	for {
-		if shutDown {
+		if serverShutDown {
 			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to clients thread..")
 			break

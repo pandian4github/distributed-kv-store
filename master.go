@@ -517,6 +517,26 @@ func get(args []string) error {
 	return nil
 }
 
+func killAllServersAndClients() {
+	for k := range portMapping {
+		client, err := getMasterRpcClient(k)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var reply bool
+		if nodeType[k] == NODE_SERVER {
+			client.Call("ServerMaster.KillServer", 0, &reply)
+		} else {
+			client.Call("ClientMaster.KillClient", 0, &reply)
+		}
+		if reply {
+			log.Println("Successfully killed node", k)
+		} else {
+			log.Println("Failed to kill node", k)
+		}
+	}
+}
+
 func main() {
 	args := os.Args
 
@@ -559,4 +579,6 @@ func main() {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+
+	killAllServersAndClients()
 }
