@@ -32,7 +32,7 @@ var thisVecTs = shared.Clock {}
 var otherServers = map[int]string {}
 
 // Maintains a map of open connections to the other servers
-var serverRpcClientMap = map[int]*rpc.Client {}
+//var serverRpcClientMap = map[int]*rpc.Client {}
 
 // To wait for all threads to complete before exiting
 var waitGroup sync.WaitGroup
@@ -52,7 +52,6 @@ var dbReceivedFrom = map[int]DB {}
 var isDataReceivedFrom = map[int]int {}
 var numServersReceivedFrom = 0
 var allConnections = map[int]map[int]string{}
-var receivedFromAllServers bool
 var propagatedToServer = map[int]map[int]int {} // {x: y} to denote if y's data is already propagated to x
 var clockDuringStabilize = shared.Clock {}
 
@@ -189,18 +188,6 @@ func collateAndResolveConflicts() error {
 			}
 		}
 	}
-	// Updating persistedDb after resolving conflicts from the updates to this server
-/*	for key, currValue := range inFlightDb {
-		prevValue, ok := persistedDb[key]
-		if ok {
-			ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, currValue.Ts, currValue.ServerId)
-			if ordering == util.HAPPENED_BEFORE {
-				persistedDb[key] = currValue
-			}
-		} else {
-			persistedDb[key] = currValue
-		}
-	}*/
 	// After all the updates in flight are persisted clear the inFlightDB
 	inFlightDb = make(DB)
 	return nil
@@ -279,6 +266,7 @@ func updateClockAfterStabilize() {
 }
 
 func cleanupStabilize() {
+	log.Println("Cleaning metadata for stabilize..")
 	// Resetting the flags and count at the end of stabilize
 	numServersReceivedFrom = 1 // this server's information
 	dataReceivedFrom = make(shared.StabilizeDataPackets)
@@ -286,7 +274,6 @@ func cleanupStabilize() {
 	isDataReceivedFrom = make(map[int]int)
 	isDataReceivedFrom[thisServerId] = 1
 	allConnections = make(map[int]map[int]string)
-	receivedFromAllServers = false
 	propagatedToServer = make(map[int]map[int]int)
 }
 
@@ -295,8 +282,11 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 
 	defer cleanupStabilize()
 
+	incrementMyClock()
+
 	// First send this server's inFlightData to the other servers
 	err := sendMyDataToNeighbors()
+	log.Println("Sent data to my neighbors.. isDataReceivedFrom: ", isDataReceivedFrom)
 	if err != nil {
 		return err
 	}
@@ -312,8 +302,12 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			return err
 		}
 		// If no more updates to send to neighbors and if updates received from all servers
-		if len(updatesToPropagate) == 0 && receivedFromAllServers {
-			break
+		if len(updatesToPropagate) == 0 && numServersReceivedFrom >= len(isDataReceivedFrom) {
+			// Explicitly check again if there is any update to propagate due to concurrency issues
+			updatesToPropagate, _ = getUpdatesToPropagate()
+			if len(updatesToPropagate) == 0 {
+				break
+			}
 		}
 		for neighbor, dataPackets := range updatesToPropagate {
 			client, err := getServerRpcClient(neighbor)
@@ -328,7 +322,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			// data to the server at the same time in which case on will fail
 			client.Call("ServerServer.SendDataPackets", dataPackets, &reply)
 			if reply {
-				log.Println("Successfully sent data pakcets to server", neighbor)
+				log.Println("Successfully sent data packets to server", neighbor)
 			} else {
 				log.Println("ERROR: Return status is false while sending data packets to server", neighbor)
 			}
@@ -344,23 +338,6 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 
 	log.Println("Received updates from all the connected servers.. Collating and resolving the conflicts.. ")
 
-	// Now, wait until all other servers have sent their inFlightDbs to this server
-/*	retryTimeSecs := 0.5
-	retryLimit := 20
-	retryAttempt := 0
-	numOtherServers := len(otherServers)
-
-	for {
-		if numServersReceivedFrom >= numOtherServers {
-			break
-		}
-		time.Sleep(time.Second * time.Duration(retryTimeSecs))
-		retryAttempt++
-		if retryAttempt >= retryLimit {
-			return errors.New("did not get the updates from all the servers after " + strconv.Itoa(retryLimit) + " retries")
-		}
-	}
-*/
 	// Received updates from all other servers, now collate them and store to persistedDb and clear inFlightDb
 	err = collateAndResolveConflicts()
 	if err != nil {
@@ -368,6 +345,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	}
 	updateClockAfterStabilize()
 
+	//cleanupStabilize()
 	*status = true
 	return nil
 }
@@ -398,6 +376,7 @@ func listenToMaster() error {
 		}
 		log.Println("Listening to connection from the master..")
 		conn, err := l.Accept()
+		//stopStabilize = false
 		if err != nil {
 			log.Fatal(err)
 			return err
@@ -434,19 +413,18 @@ func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDat
 }
 
 func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, reply *bool) error {
+	mutex.Lock()
 	for serverId, dataPacket := range request {
-		log.Println("Received data packet from server", serverId)
-		mutex.Lock()
+		log.Println("Received data packet of server", serverId, "dataPacket: ", dataPacket)
+		if thisVecTs[serverId] >= dataPacket.VecTs[serverId] {
+			log.Println("Ignoring data packet of server", serverId, "with ts ", dataPacket.VecTs, "my ts", thisVecTs)
+			continue
+		}
 		if isDataReceivedFrom[serverId] == 0 {
 			isDataReceivedFrom[serverId] = 1
 
 			dataReceivedFrom[serverId] = dataPacket
 			dbReceivedFrom[serverId] = dataPacket.InFlightDB // Copy by reference. Should we copy by value?
-			//mutex.Unlock()
-
-			//for k, v := range dataPacket.InFlightDB {
-			//	dataReceivedFrom[serverId][k] = v
-			//}
 
 			log.Println("Updating the vector clock according to vector clock of server", serverId)
 			updateClockDuringStabilize(dataPacket.VecTs)
@@ -458,19 +436,14 @@ func (t *ServerServer) SendDataPackets(request shared.StabilizeDataPackets, repl
 					isDataReceivedFrom[k] = 0
 				}
 			}
-			//mutex.Lock()
 			allConnections[serverId] = connections
-			//mutex.Unlock()
 
 			numServersReceivedFrom++
 			log.Println("isDataReceivedFrom:", isDataReceivedFrom, "numServersReceivedFrom:", numServersReceivedFrom)
 		}
-		mutex.Unlock()
 	}
-	mutex.Lock()
 	if numServersReceivedFrom >= len(isDataReceivedFrom) {
-		log.Println("Received data from all connected servers..")
-		receivedFromAllServers = true
+		log.Println("Received data from all connected servers: ", numServersReceivedFrom, "isDataReceivedFrom: ", isDataReceivedFrom)
 	}
 	mutex.Unlock()
 
@@ -509,9 +482,7 @@ func listenToServers() error {
 			log.Fatal(err)
 			return err
 		}
-		//log.Println("Serving the connection request..")
 		rpcServer.ServeConn(conn) // synchronous call required?
-		//log.Println("Connection request served. ")
 	}
 
 	return nil
@@ -523,7 +494,6 @@ Implementation of different RPC methods exported by server to clients
 type ServerClient int
 
 func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *shared.Clock) error {
-	// TODO: Handle Multiple Clients
 	// Resolve putArgs parameter
 	key := putArgs.Key
 	value := putArgs.Value
@@ -539,7 +509,7 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *sh
 	log.Println("ServerPut.. ", thisVecTs)
 
 	// Update/Write to the inFlightDb
-	newValue := shared.Value{value, thisVecTs, thisServerId, clientId}
+	newValue := shared.Value{Val: value, Ts: thisVecTs, ServerId: thisServerId, ClientId: clientId}
 	prevValue, exists := inFlightDb[key]
 	if exists == false {
 		// Create a new entry into the inFlightDb
@@ -563,7 +533,6 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *sh
 }
 
 func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
-	// TODO: Handle Multiple Clients
 	// Increment the clock on receiving a get request from client
 	incrementMyClock()
 
@@ -614,6 +583,7 @@ func listenToClients() error {
 		}
 		log.Println("Listening to connection from the clients..")
 		conn, err := clientListener.Accept()
+		//stopStabilize = false
 		if err != nil {
 			log.Fatal(err)
 			return err
@@ -623,14 +593,6 @@ func listenToClients() error {
 
 	return nil
 }
-
-/*func print(serverId int, basePort int, threadId int) {
-	defer waitGroup.Done()
-	for i := 0; i < 1000; i++ {
-		log.Println(threadId, serverId, basePort)
-		time.Sleep(time.Second)
-	}
-}*/
 
 func incrementMyClock() {
 	thisVecTs[thisServerId]++
@@ -724,10 +686,5 @@ func main() {
 	go listenToServers()
 	go listenToClients()
 
-/*	for i := 0; i < 10; i++ {
-		go print(serverId, basePort, i)
-		waitGroup.Add(1)
-	}
-*/
 	waitGroup.Wait()
 }

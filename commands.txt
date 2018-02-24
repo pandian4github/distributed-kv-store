@@ -34,6 +34,22 @@ printStore 2
 printStore 8
 printStore 9
 stabilize
+printStore 0
+printStore 1
+printStore 2
+printStore 8
+printStore 9
+put 3 d xyz6
+put 4 d xyz7
+put 5 e xyz8
+put 6 e xyz9
+put 7 f xyz10
+printStore 0
+printStore 1
+printStore 2
+printStore 8
+printStore 9
+stabilize
 get 3 a
 get 3 b
 get 3 c
