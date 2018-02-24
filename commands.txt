@@ -64,6 +64,8 @@ printStore 1
 printStore 2
 printStore 8
 printStore 9
+joinServer 10
+printStore 10
 killServer 0
 killServer 1
 killServer 2

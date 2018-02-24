@@ -165,12 +165,12 @@ func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
 	log.Println("Printing DB contents from server", thisServerId)
 	log.Println("{")
 	for k, v := range inFlightDb {
-		log.Println(k, ":", v.Val)
+		log.Println(k, ": ", v.Val)
 		printed[k] = true
 	}
 	for k, v := range persistedDb {
 		if !printed[k] {
-			log.Println(k, ":", v.Val)
+			log.Println(k, ": ", v.Val)
 			printed[k] = true
 		}
 	}

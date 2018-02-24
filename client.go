@@ -140,7 +140,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 	if serverId == -1 {
 		return errors.New("connection does not exist")
 	}
-	putArgs := shared.ClientToServerPutArgs{key, value, thisClientId, clientLogicalClock}
+	putArgs := shared.ClientToServerPutArgs{Key: key, Value: value, ClientId: thisClientId, ClientClock: clientLogicalClock}
 	// reply contains vectorTimeStamp corresponding to this transaction
 	var reply shared.Clock
 	serverToTalk, err := getClientRpcServer(serverId)
@@ -200,7 +200,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	}
 
 	if reply.ClientId == -1 && reply.ServerId == -1 {
-		log.Println("ERR_NO_KEY")
+		log.Println(key, ": ERR_KEY")
 		*retVal = true
 		return nil
 	}
@@ -215,13 +215,13 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 		log.Println("ordering:", ordering)
 		if ordering == util.HAPPENED_BEFORE {
 			// reply has stale data
-			log.Println("Get Failed: ERR_DEP")
+			log.Println(key, ": ERR_DEP")
 			*retVal = true
 			return nil
 		} else if ordering == util.CONCURRENT {
 			if reply.Ts[reply.ClientId] < clientHistory[historyKey{key:key, clientId:reply.ClientId}] {
 				// reply has stale data (reply.clientId and thisClientId are same!)
-				log.Println("Get Failed: ERR_DEP")
+				log.Println(key, ": ERR_DEP")
 				*retVal = true
 				return nil
 			}
@@ -231,7 +231,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	// There is no history of reads/writes from this client for key
 	latestTimestamp[key] = latestTsDetail{serverId:reply.ServerId, clock:reply.Ts}
 	clientHistory[historyKey{key:key, clientId:reply.ClientId}] = reply.Ts[reply.ClientId]
-	log.Println("Get Successful:", key, "->", reply.Val)
+	log.Println(key, ": ", reply.Val)
 
 	*retVal = true
 	// Add this transaction to clientHistory
