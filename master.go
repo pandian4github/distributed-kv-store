@@ -13,7 +13,8 @@ import (
 	"net/rpc"
 	"./shared"
 	"sync"
-)
+	"time"
+	)
 
 var functionMap = map[string]func(args []string) error {
 	"joinServer": joinServer,
@@ -53,6 +54,12 @@ var nodeType = map[int]int {}
 
 // Maintains a map of open connections to different servers and clients
 var masterRpcClientMap = map[int]*rpc.Client {}
+
+var minTime = map[string]time.Duration {}
+var maxTime = map[string]time.Duration {}
+var cumulativeTime = map[string]time.Duration {}
+var numOps = map[string]int {}
+var totalOps = 0
 
 // To distinguish between a server and a client node
 const NODE_SERVER = 0
@@ -536,9 +543,31 @@ func killAllServersAndClients() {
 		}
 	}
 }
+func recordTimerInfo(command string, start time.Time) time.Time {
+	delta := time.Since(start)
+	if numOps[command] == 0 {
+		minTime[command] = delta
+		maxTime[command] = delta
+		cumulativeTime[command] = delta
+	} else {
+		if delta < minTime[command] {
+			minTime[command] = delta
+		}
+		if delta > maxTime[command] {
+			maxTime[command] = delta
+		}
+		cumulativeTime[command] += delta
+	}
+	numOps[command]++
+	totalOps++
+	return time.Now()
+}
 
 func main() {
 	args := os.Args
+
+	globalStart := time.Now()
+	start := time.Now()
 
 	if len(args) != 2 {
 		fmt.Println("Program should contain one argument (path to the file containing the commands)")
@@ -569,6 +598,7 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
+			start = recordTimerInfo(parts[0], start)
 		} else {
 			log.Println("Error: unknown command to the key-value store", parts[0])
 		}
@@ -581,4 +611,15 @@ func main() {
 	}
 
 	killAllServersAndClients()
+
+	log.Println("---------------- Timer and throughput information ----------------")
+	for k, v := range numOps {
+		log.Println("Operation:", k, "total_ops:", v, "minTime:", minTime[k], "maxTime:",
+			maxTime[k], "averageTime:", cumulativeTime[k]/time.Duration(v))
+	}
+	overallDuration := time.Since(globalStart)
+	log.Println("Overall duration:", overallDuration, "totalOps:", totalOps)
+	log.Println("Overall average latency:", overallDuration / time.Duration(totalOps))
+	log.Println("Overall throughput:", float64(totalOps) / overallDuration.Seconds())
+	log.Println("------------------------------------------------------------------")
 }
