@@ -14,7 +14,8 @@ import (
 	"./shared"
 	"sync"
 	"time"
-	)
+	"math"
+)
 
 var functionMap = map[string]func(args []string) error {
 	"joinServer": joinServer,
@@ -563,6 +564,10 @@ func recordTimerInfo(command string, start time.Time) time.Time {
 	return time.Now()
 }
 
+func Round(x, numDigits float64) float64 {
+	return math.Floor(x * math.Pow(10, numDigits)) / 100.0
+}
+
 func main() {
 	args := os.Args
 
@@ -614,12 +619,14 @@ func main() {
 
 	log.Println("---------------- Timer and throughput information ----------------")
 	for k, v := range numOps {
-		log.Println("Operation:", k, "total_ops:", v, "minTime:", minTime[k], "maxTime:",
-			maxTime[k], "averageTime:", cumulativeTime[k]/time.Duration(v))
+		log.Println(v, k, "ops: latency -", minTime[k].Round(time.Duration(100000)), "(min)",
+			maxTime[k].Round(time.Duration(100000)), "(max)",
+				Round(cumulativeTime[k].Seconds() * 1000.0 / float64(v), 2), "ms (avg);",
+				"average throughput -", Round(float64(v) / cumulativeTime[k].Seconds(), 2), "ops/sec")
 	}
 	overallDuration := time.Since(globalStart)
 	log.Println("Overall duration:", overallDuration, "totalOps:", totalOps)
-	log.Println("Overall average latency:", overallDuration / time.Duration(totalOps))
-	log.Println("Overall throughput:", float64(totalOps) / overallDuration.Seconds())
+	log.Println("Overall average latency (for all ops):", overallDuration / time.Duration(totalOps))
+	log.Println("Overall average throughput (for all ops):", float64(totalOps) / overallDuration.Seconds())
 	log.Println("------------------------------------------------------------------")
 }
