@@ -520,25 +520,25 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *sh
 	if thisVecTs[clientId] < clientClock {
 		thisVecTs[clientId] = clientClock
 	}
-	log.Println("ServerPut.. ", thisVecTs)
+	//log.Println("ServerPut.. ", thisVecTs)
 
 	// Update/Write to the inFlightDb
 	newValue := shared.Value{Val: value, Ts: thisVecTs, ServerId: thisServerId, ClientId: clientId}
 	prevValue, exists := inFlightDb[key]
 	if exists == false {
 		// Create a new entry into the inFlightDb
-		log.Println("Creating new key..")
+		//log.Println("Creating new key..")
 		inFlightDb[key] = newValue
 		*reply = newValue.Ts
 	} else {
 		// Compare the timeStamps of the values and either update or ignore
 		ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, newValue.Ts, newValue.ServerId)
 		if ordering == util.HAPPENED_BEFORE {
-			log.Println("Updating the value..")
+			//log.Println("Updating the value..")
 			inFlightDb[key] = newValue
 			*reply = newValue.Ts
 		} else {
-			log.Println("Using existing value..")
+			//log.Println("Using existing value..")
 			*reply = prevValue.Ts
 		}
 	}
@@ -550,7 +550,7 @@ func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
 	// Increment the clock on receiving a get request from client
 	incrementMyClock()
 
-	log.Println("Received get request for key", key)
+	//log.Println("Received get request for key", key)
 	// Check for the key in inFlightDb first.
 	value, ok := inFlightDb[key]
 	if ok {

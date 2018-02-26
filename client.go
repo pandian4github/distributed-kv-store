@@ -14,7 +14,6 @@ import (
 	"sort"
 )
 
-
 /*
   Attributes of this client
 */
@@ -109,9 +108,9 @@ func (t *ClientMaster) KillClient(dummy int, status *bool) error {
 }
 
 func getClientRpcServer(serverId int) (*rpc.Client, error) {
-	//if server, ok := clientRpcServerMap[serverId]; ok {
-	//	return server, nil
-	//}
+	if server, ok := clientRpcServerMap[serverId]; ok {
+		return server, nil
+	}
 	// servers listen to clients on serverBasePort+2
 	serverBasePort = clientServerBasePortMap[serverId]
 	portToConnect := serverBasePort + 2
@@ -121,7 +120,7 @@ func getClientRpcServer(serverId int) (*rpc.Client, error) {
 		return nil, err
 	}
 	server := rpc.NewClient(conn)
-	//clientRpcServerMap[serverId] = server
+	clientRpcServerMap[serverId] = server
 	return server, nil
 }
 
@@ -133,7 +132,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 	key := args.Key
 	value := args.Value
 	*retVal = false
-	log.Println("Received put request for key", key)
+	//log.Println("Received put request for key", key)
 	// Make a put request to the connected server
 
 	if serverId == -1 {
@@ -147,13 +146,13 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		return err
 	}
 	err = serverToTalk.Call("ServerClient.ServerPut", putArgs, &reply)
-	serverToTalk.Close()
+	//serverToTalk.Close()
 	if err != nil {
 		return err
 	} else {
 		// On a successful put, add this transaction into the client's history
 		// reply contains the timestamp recorded at the server for this put call
-		log.Println("Put successful")
+		//log.Println("Put successful")
 		currKey := historyKey{key, thisClientId}
 		// If some value with same key, clientId pair exists in clientHistory,
 		// we can satisfy both READ_YOUR_WRITES or MONOTONIC_READS by just replacing it
@@ -169,7 +168,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		}
 		*retVal = true
 	}
-	log.Println("End of ClientPut::", clientHistory)
+	//log.Println("End of ClientPut::", clientHistory)
 	return nil
 }
 
@@ -177,7 +176,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	// Increment clients logical clock on receiving a get request from master
 	clientLogicalClock += 1
 
-	log.Println("Received get request for key", key)
+	//log.Println("Received get request for key", key)
 	*retVal = false
 	// Make a get request from the connected server
 
@@ -191,9 +190,9 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	if err != nil {
 		return err
 	}
-	log.Println("Calling ServerGet..")
+	//log.Println("Calling ServerGet..")
 	err = serverToTalk.Call("ServerClient.ServerGet", key, &reply)
-	serverToTalk.Close()
+	//serverToTalk.Close()
 	if err != nil {
 		return err
 	}
@@ -211,7 +210,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 		// Get succeeds if the event clearly happened after the event in client history
 		// or if the concurrent events are ordered at least at this client
 		ordering := util.HappenedBefore(reply.Ts, currLatestTsDetail.clock)
-		log.Println("ordering:", ordering)
+		//log.Println("ordering:", ordering)
 		if ordering == util.HAPPENED_BEFORE {
 			// reply has stale data
 			log.Println(key, ": ERR_DEP")
@@ -234,7 +233,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 
 	*retVal = true
 	// Add this transaction to clientHistory
-	log.Println("End of ClientGet - clientHistory", clientHistory, "latestTimestamp", latestTimestamp)
+	//log.Println("End of ClientGet - clientHistory", clientHistory, "latestTimestamp", latestTimestamp)
 
 	// If successful
 	return nil
