@@ -161,6 +161,11 @@ func joinServer(args []string) error {
 		}
 	}
 
+	_, err = getMasterRpcClient(serverId)
+	if err != nil {
+		return errors.New("unable to connect to server RPC from master")
+	}
+
 	return nil
 }
 
@@ -231,6 +236,12 @@ func joinClient(args []string) error {
 	cmd.Stderr = out
 
 	cmd.Start()
+
+	_, err = getMasterRpcClient(clientId)
+	if err != nil {
+		log.Fatal("Failed: rpc.Dail from Master to Client", err)
+		return err
+	}
 
 	return nil
 }

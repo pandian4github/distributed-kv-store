@@ -12,7 +12,6 @@ import (
 	"./util"
 	//"strings"
 	"sort"
-	"time"
 )
 
 
@@ -257,7 +256,7 @@ func clientListenToMaster() error {
 	}
 	for {
 		if clientShutDown {
-			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			util.Sleep(1.0) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to master thread..")
 			break
 		}

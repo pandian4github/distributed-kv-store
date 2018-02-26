@@ -10,7 +10,6 @@ import (
 	"./shared"
 	"net/rpc"
 	"net"
-	"time"
 	"./util"
 	"math/rand"
 	//"fmt"
@@ -307,7 +306,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 	}
 
 	// Loop to keep sending the neighbors' transitive updates to other neighbors
-	intervalBetweenRetrySecs := 0.5
+	var intervalBetweenRetrySecs float32 = 0.005
 	for {
 		updatesToPropagate, err := getUpdatesToPropagate()
 		if len(updatesToPropagate) > 0 {
@@ -349,7 +348,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			}
 			client.Close()
 		}
-		time.Sleep(time.Second * time.Duration(intervalBetweenRetrySecs))
+		util.Sleep(intervalBetweenRetrySecs)
 	}
 
 	log.Println("Received updates from all the connected servers.. Collating and resolving the conflicts.. ")
@@ -386,7 +385,7 @@ func listenToMaster() error {
 
 	for {
 		if serverShutDown {
-			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			util.Sleep(1.0) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to master thread..")
 			break
 		}
@@ -487,7 +486,7 @@ func listenToServers() error {
 
 	for {
 		if serverShutDown {
-			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			util.Sleep(1.0) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to servers thread..")
 			break
 		}
@@ -592,7 +591,7 @@ func listenToClients() error {
 
 	for {
 		if serverShutDown {
-			time.Sleep(time.Second) // so that the RPC call returns before the process is shut down
+			util.Sleep(1.0) // so that the RPC call returns before the process is shut down
 			log.Println("Shutting down listen to clients thread..")
 			break
 		}

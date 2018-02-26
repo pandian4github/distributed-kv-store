@@ -11,7 +11,8 @@ import (
 	"log"
 )
 
-var retryTimes = []float32{0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5}
+var retryTimes = []float32{0.1, 0.2, 0.2, 0.25, 0.25, 0.25, 0.25, 0.5,
+							0.5, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5}
 const LOCALHOST_PREFIX = "localhost:"
 
 const (
@@ -132,6 +133,10 @@ func DecodeMapIntStringFromStringCustom(str string) (map[int]string, error) {
 	return mp, nil
 }
 
+func Sleep(secs float32) {
+	time.Sleep(time.Duration(float32(time.Second.Nanoseconds()) * secs))
+}
+
 func DialWithRetry(hostPortPair string) (net.Conn, error) {
 	numRetries := len(retryTimes)
 	var conn net.Conn
@@ -140,7 +145,7 @@ func DialWithRetry(hostPortPair string) (net.Conn, error) {
 		conn, err = net.Dial("tcp", hostPortPair)
 		if err != nil {
 			log.Println("Unable to connect due to", err, "Waiting for", retryTimes[i], "seconds before retrying..")
-			time.Sleep(time.Second * time.Duration(retryTimes[i]))
+			Sleep(retryTimes[i])
 			continue
 		}
 		return conn, nil
