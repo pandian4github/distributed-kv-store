@@ -630,9 +630,7 @@ func main() {
 
 	log.Println("---------------- Timer and throughput information ----------------")
 	for k, v := range numOps {
-		log.Println(v, k, "ops: latency -", minTime[k].Round(time.Duration(100000)), "(min)",
-			maxTime[k].Round(time.Duration(100000)), "(max)",
-				Round(cumulativeTime[k].Seconds() * 1000.0 / float64(v), 2), "ms (avg);",
+		log.Println(v, k, "ops: latency -", minTime[k], "(min)", maxTime[k], "(max)", Round(cumulativeTime[k].Seconds() * 1000.0 / float64(v), 2), "ms (avg);",
 				"average throughput -", Round(float64(v) / cumulativeTime[k].Seconds(), 2), "ops/sec")
 	}
 	overallDuration := time.Since(globalStart)
