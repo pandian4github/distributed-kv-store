@@ -108,9 +108,9 @@ func (t *ClientMaster) KillClient(dummy int, status *bool) error {
 }
 
 func getClientRpcServer(serverId int) (*rpc.Client, error) {
-	if server, ok := clientRpcServerMap[serverId]; ok {
-		return server, nil
-	}
+	//if server, ok := clientRpcServerMap[serverId]; ok {
+	//	return server, nil
+	//}
 	// servers listen to clients on serverBasePort+2
 	serverBasePort = clientServerBasePortMap[serverId]
 	portToConnect := serverBasePort + 2
@@ -120,7 +120,7 @@ func getClientRpcServer(serverId int) (*rpc.Client, error) {
 		return nil, err
 	}
 	server := rpc.NewClient(conn)
-	clientRpcServerMap[serverId] = server
+	//clientRpcServerMap[serverId] = server
 	return server, nil
 }
 
@@ -146,7 +146,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		return err
 	}
 	err = serverToTalk.Call("ServerClient.ServerPut", putArgs, &reply)
-	//serverToTalk.Close()
+	serverToTalk.Close()
 	if err != nil {
 		return err
 	} else {
@@ -192,7 +192,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	}
 	//log.Println("Calling ServerGet..")
 	err = serverToTalk.Call("ServerClient.ServerGet", key, &reply)
-	//serverToTalk.Close()
+	serverToTalk.Close()
 	if err != nil {
 		return err
 	}
