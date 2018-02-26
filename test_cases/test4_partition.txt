@@ -1,0 +1,74 @@
+joinServer 0
+joinServer 1
+joinServer 2
+joinServer 8
+joinServer 9
+breakConnection 0 2
+breakConnection 0 8
+breakConnection 0 9
+breakConnection 1 8
+breakConnection 1 9
+breakConnection 2 9
+breakConnection 2 8
+joinClient 3 0
+joinClient 4 1
+joinClient 5 2
+joinClient 6 8
+joinClient 7 9
+put 3 a xyz1
+put 4 a xyz2
+put 5 b xyz3
+put 6 b xyz4
+put 7 c xyz5
+get 3 a
+get 3 b
+get 3 c
+get 4 a
+get 4 b
+get 4 c
+get 5 a
+get 5 b
+get 5 c
+printStore 0
+printStore 1
+printStore 2
+printStore 8
+printStore 9
+stabilize
+printStore 0
+printStore 1
+printStore 2
+printStore 8
+printStore 9
+put 3 d xyz6
+put 4 d xyz7
+put 5 e xyz8
+put 6 e xyz9
+put 7 f xyz10
+printStore 0
+printStore 1
+printStore 2
+printStore 8
+printStore 9
+stabilize
+get 3 a
+get 3 b
+get 3 c
+get 4 a
+get 4 b
+get 4 c
+get 5 a
+get 5 b
+get 5 c
+printStore 0
+printStore 1
+printStore 2
+printStore 8
+printStore 9
+joinServer 10
+printStore 10
+killServer 0
+killServer 1
+killServer 2
+killServer 8
+killServer 9
