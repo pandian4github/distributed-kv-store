@@ -582,6 +582,7 @@ func Round(x, numDigits float64) float64 {
 func main() {
 	args := os.Args
 
+	os.Mkdir("logs", os.ModePerm)
 	globalStart := time.Now()
 	start := time.Now()
 
