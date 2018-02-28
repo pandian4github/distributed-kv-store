@@ -1,0 +1,21 @@
+joinServer 0
+joinServer 1
+joinServer 2
+joinClient 4 0
+put 4 k v1
+get 4 k
+put 4 k v2
+get 4 k
+breakConnection 4 0
+createConnection 4 1
+put 4 k v3
+get 4 k
+breakConnection 4 1
+createConnection 4 2
+put 4 k v4
+get 4 k
+breakConnection 4 2
+createConnection 4 0
+get 4 k
+put 4 k v5
+get 4 k
