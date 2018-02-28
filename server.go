@@ -25,7 +25,7 @@ import (
 var thisServerId int
 var thisBasePort int
 
-var thisVecTs = shared.Clock{}
+var thisServerVecTs = shared.Clock{}
 
 // Maps serverId to host:basePort of that server
 var otherServers = map[int]string{}
@@ -46,7 +46,7 @@ var clientListener net.Listener
 var mutex = &sync.Mutex{}
 
 type ServerPacketPair struct {
-	ServerId     int
+	ServerId int
 	DataPacketId int // data packet belonging to the server
 }
 
@@ -222,7 +222,7 @@ func sendMyDataToNeighbors() error {
 		}
 
 		log.Println("Sending inFlightData to server", serverId)
-		var thisServerDataPacket = shared.StabilizeDataPacket{InFlightDB: inFlightDb, VecTs: thisVecTs, Peers: otherServers}
+		var thisServerDataPacket = shared.StabilizeDataPacket{InFlightDB: inFlightDb, VecTs: thisServerVecTs, Peers: otherServers}
 		var args = shared.SendDataPacketsRequest{ServerId: thisServerId, DataPackets: shared.StabilizeDataPackets{thisServerId: thisServerDataPacket}}
 
 		var reply bool
@@ -272,11 +272,11 @@ func updateClockDuringStabilize(clock shared.Clock) {
 }
 
 func updateClockAfterStabilize() {
-	updateClockDuringStabilize(thisVecTs)
+	updateClockDuringStabilize(thisServerVecTs)
 	for k, v := range clockDuringStabilize {
-		thisVecTs[k] = v
+		thisServerVecTs[k] = v
 	}
-	incrementMyClock()
+	incrementMyServerClock()
 }
 
 func cleanupStabilize() {
@@ -297,7 +297,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 
 	defer cleanupStabilize()
 
-	incrementMyClock()
+	incrementMyServerClock()
 
 	// First send this server's inFlightData to the other servers
 	err := sendMyDataToNeighbors()
@@ -419,7 +419,7 @@ func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDat
 	for k, v := range persistedDb {
 		response.PersistedDb[k] = v
 	}
-	for k, v := range thisVecTs {
+	for k, v := range thisServerVecTs {
 		response.VecTs[k] = v
 	}
 	log.Println("Bootstrap request complete, data copied to response object.")
@@ -431,8 +431,8 @@ func (t *ServerServer) SendDataPackets(request shared.SendDataPacketsRequest, re
 	dataPackets := request.DataPackets
 	for serverId, dataPacket := range dataPackets {
 		log.Println("Received data packet of server", serverId, "from server", request.ServerId, "dataPacket: ", dataPacket)
-		if thisVecTs[serverId] >= dataPacket.VecTs[serverId] {
-			log.Println("Ignoring data packet of server", serverId, "with ts ", dataPacket.VecTs, "my ts", thisVecTs)
+		if thisServerVecTs[serverId] >= dataPacket.VecTs[serverId] {
+			log.Println("Ignoring data packet of server", serverId, "with ts ", dataPacket.VecTs, "my ts", thisServerVecTs)
 			continue
 		}
 		serverHasDataPacketMap[ServerPacketPair{ServerId: request.ServerId, DataPacketId: serverId}] = 1
@@ -515,12 +515,12 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *[2
 	clientId := putArgs.ClientId
 	clientClock := putArgs.ClientClock
 
-	incrementMyClock()
-	updateMyClock(clientClock)
+	incrementMyServerClock()
+	util.UpdateMyClock(&thisServerVecTs, clientClock)
 
 	// Update/Write to the inFlightDb
 	var valTs = make(map[int]int)
-	util.CopyVecTs(thisVecTs, &valTs)
+	util.CopyVecTs(thisServerVecTs, &valTs)
 	newValue := shared.Value{Val: value, Ts: valTs, ServerId: thisServerId, ClientId: clientId}
 	prevValue, exists := inFlightDb[key]
 
@@ -537,34 +537,34 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *[2
 			reply[0] = prevValue.Ts
 		}
 	}
-	reply[1] = thisVecTs
+	reply[1] = thisServerVecTs
 	return nil
 }
 
 func (t *ServerClient) ServerGet(getArgs shared.ClientToServerGetArgs, reply *shared.ServerToClientGetReply) error {
-	incrementMyClock()
-	updateMyClock(getArgs.ClientVecTs)
+	incrementMyServerClock()
+	util.UpdateMyClock(&thisServerVecTs, getArgs.ClientVecTs)
 
 	key := getArgs.Key
 
 	value, ok := inFlightDb[key]
 	if ok {
 		reply.Value = value
-		reply.ServerVecTs = thisVecTs
+		reply.ServerVecTs = thisServerVecTs
 		return nil
 	}
 
 	value, ok = persistedDb[key]
 	if ok {
 		reply.Value = value
-		reply.ServerVecTs = thisVecTs
+		reply.ServerVecTs = thisServerVecTs
 		return nil
 	}
 
 	reply.Value.Val = "ERR_NO_KEY"
 	reply.Value.ServerId = -1
 	reply.Value.ClientId = -1
-	reply.ServerVecTs = thisVecTs
+	reply.ServerVecTs = thisServerVecTs
 	return nil
 }
 
@@ -606,17 +606,9 @@ func listenToClients() error {
 	return nil
 }
 
-func incrementMyClock() {
+func incrementMyServerClock() {
 	log.Print("Incrementing server clock")
-	thisVecTs[thisServerId]++
-}
-
-func updateMyClock(compareClock shared.Clock) {
-	for id, c1 := range compareClock {
-		if thisVecTs[id] < c1 {
-			thisVecTs[id] = c1
-		}
-	}
+	thisServerVecTs[thisServerId]++
 }
 
 func bootstrapFromServer(serverId int) error {
@@ -633,11 +625,11 @@ func bootstrapFromServer(serverId int) error {
 		persistedDb[k] = v
 	}
 	for k, v := range reply.VecTs {
-		if v > thisVecTs[k] {
-			thisVecTs[k] = v
+		if v > thisServerVecTs[k] {
+			thisServerVecTs[k] = v
 		}
 	}
-	incrementMyClock()
+	incrementMyServerClock()
 
 	log.Println("Bootstrap complete. Fetched", len(persistedDb), "key-value pairs from server", serverId)
 	return nil
@@ -663,7 +655,7 @@ func bootstrapData() error {
 }
 
 func initializeClock() {
-	thisVecTs[thisServerId] = 1 // or, 0
+	thisServerVecTs[thisServerId] = 1 // or, 0
 }
 
 func main() {

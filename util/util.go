@@ -9,6 +9,7 @@ import (
 	"net"
 	"time"
 	"log"
+	"../shared"
 )
 
 var retryTimes = []float32{0.1, 0.2, 0.2, 0.25, 0.25, 0.25, 0.25, 0.5,
@@ -157,6 +158,14 @@ func DialWithRetry(hostPortPair string) (net.Conn, error) {
 		return conn, nil
 	}
 	return conn, err
+}
+
+func UpdateMyClock(myClock *shared.Clock, compareClock shared.Clock) {
+	for id, c1 := range compareClock {
+		if (*myClock)[id] < c1 {
+			(*myClock)[id] = c1
+		}
+	}
 }
 
 /*

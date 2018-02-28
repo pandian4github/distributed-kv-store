@@ -24,7 +24,7 @@ var thisClientId int
 var clientShutDown = false
 
 // client Vector TimeStamp
-var clientVecTs = shared.Clock{thisClientId:1}
+var thisClientVecTs = shared.Clock{}
 
 type historyValue map[int]shared.Clock
 
@@ -115,14 +115,6 @@ func getClientRpcServer(serverId int) (*rpc.Client, error) {
 
 var clientWaitGroup sync.WaitGroup
 
-func updateClientVecTs(compareClock shared.Clock) {
-	for id, c1 := range compareClock {
-		if clientVecTs[id] < c1 {
-			clientVecTs[id] = c1
-		}
-	}
-}
-
 func pruneClientHistory(key string, vecTs shared.Clock) {
 	if prevEvents, ok := clientHistory[key]; ok {
 		for serverId, ts := range prevEvents {
@@ -140,7 +132,6 @@ func insertIntoClientHistory(key string, serverId int, vecTs shared.Clock) {
 			clientHistory[key][serverId] = vecTs
 		}
 	} else {
-		clientHistory[key] = make(historyValue)
 		clientHistory[key] = historyValue{serverId:vecTs}
 	}
 }
@@ -158,7 +149,7 @@ func checkForDependencyError(key string, serverId int, vecTs shared.Clock) bool{
 
 
 func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool) error {
-	clientVecTs[thisClientId] += 1
+	incrementMyClientClock()
 
 	key := args.Key
 	value := args.Value
@@ -174,7 +165,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 	}
 
 	var reply [2]shared.Clock
-	putArgs := shared.ClientToServerPutArgs{Key: key, Value: value, ClientId: thisClientId, ClientClock: clientVecTs}
+	putArgs := shared.ClientToServerPutArgs{Key: key, Value: value, ClientId: thisClientId, ClientClock: thisClientVecTs}
 	err = serverToTalk.Call("ServerClient.ServerPut", putArgs, &reply)
 	serverToTalk.Close()
 	if err != nil {
@@ -184,14 +175,17 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		*retVal = true
 	}
 
-	updateClientVecTs(reply[1])
+	util.UpdateMyClock(&thisClientVecTs, reply[1])
 	return nil
+}
+
+func incrementMyClientClock() {
+	thisClientVecTs[thisClientId]++
 }
 
 func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	// Increment clients logical clock on receiving a get request from master
-	clientVecTs[thisClientId] += 1
-
+	incrementMyClientClock()
 	*retVal = false
 	if serverId == -1 {
 		return errors.New("connection does not exist")
@@ -205,13 +199,13 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	if err != nil {
 		return err
 	}
-	getArgs := shared.ClientToServerGetArgs{Key:key, ClientVecTs:clientVecTs}
+	getArgs := shared.ClientToServerGetArgs{Key:key, ClientVecTs: thisClientVecTs}
 	err = serverToTalk.Call("ServerClient.ServerGet", getArgs, &reply)
 	serverToTalk.Close()
 	if err != nil {
 		return err
 	}
-	updateClientVecTs(reply.ServerVecTs)
+	util.UpdateMyClock(&thisClientVecTs, reply.ServerVecTs)
 
 	if reply.Value.ClientId == -1 && reply.Value.ServerId == -1 {
 		log.Println(key, ": ERR_KEY")
@@ -219,15 +213,15 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 		return nil
 	}
 
-	var errdep = false
-	errdep = checkForDependencyError(key, reply.Value.ServerId, reply.Value.Ts)
-	if errdep == true {
+	var errDep = false
+	errDep = checkForDependencyError(key, reply.Value.ServerId, reply.Value.Ts)
+	insertIntoClientHistory(key, serverId, reply.Value.Ts)
+	if errDep == true {
 		log.Println(key, ": ERR_DEP")
 		*retVal = true
 		return nil
 	}
 
-	insertIntoClientHistory(key, serverId, reply.Value.Ts)
 	log.Println(key, ": ", reply.Value.Val)
 	*retVal = true
 	return nil
@@ -289,6 +283,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Unable to get the client basePort", thisClientBasePort)
 	}
+	incrementMyClientClock()
 
 	log.Println("Starting client with clientId", thisClientId, "serverId", serverId, "serverBasePort", serverBasePort, "clientBasePort", thisClientBasePort)
 	clientServerBasePortMap[serverId] = serverBasePort
