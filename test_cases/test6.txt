@@ -1,0 +1,44 @@
+joinServer 0
+joinServer 1
+joinServer 2
+breakConnection 0 2
+breakConnection 0 1
+breakConnection 1 2
+joinClient 3 0
+put 3 k v1
+printStore 0
+printStore 1
+printStore 2
+breakConnection 3 0
+createConnection 3 1
+put 3 k v2
+printStore 0
+printStore 1
+printStore 2
+breakConnection 3 1
+joinClient 4 1
+put 4 k v3
+printStore 0
+printStore 1
+printStore 2
+breakConnection 4 1
+createConnection 4 2
+put 4 k v4
+printStore 0
+printStore 1
+printStore 2
+breakConnection 4 2
+joinClient 5 2
+get 5 k
+printStore 0
+printStore 1
+printStore 2
+breakConnection 5 2
+createConnection 5 0
+get 5 k
+printStore 0
+printStore 1
+printStore 2
+killServer 0
+killServer 1
+killServer 2
