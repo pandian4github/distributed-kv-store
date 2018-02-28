@@ -1,0 +1,51 @@
+joinServer 0
+joinServer 1
+joinServer 2
+joinServer 3
+joinServer 4
+joinClient 5 0
+joinClient 6 1
+joinClient 7 2
+joinClient 8 3
+joinClient 9 4
+put 5 KlrbhoGCRo ZOjPVkgKJGeqHpZFSDrF
+put 6 BbJvXIwxIj svvpgjFfCqIhOFSDYLtt
+put 7 RcxqaAlPsW okIWoCOPEIrfLGsnZdHi
+put 8 dEwHRSPhUv wCtOAqkwtnydqfpEoSrb
+put 9 xyzDLkGJKO kAWNhPKDodvJUDOGBgpH
+put 5 ajumEnawIc FAfDfbcmCWsrlAlDzpqi
+put 6 KYcWYlSNet CjerrWCJBlHpsEkohrNq
+put 7 nJArqNkPMd nSMpEfafyKpuUSlJGjFo
+put 8 WuFisJXGle yQVknKNZiykzMEnAHMlb
+put 9 dliWWUgsBS jwjpItDCLozAOoBfoqxl
+put 5 XOLbKSbnAQ vygmUYhJaaxmVtbdfdop
+put 6 onxekECQgs WODZYwepZHbTYXBXqDxQ
+put 7 RnrQWOmHHW rRSLSGycMpKsqxfXanOl
+put 8 LJDevGbyMf AQcSJzVBoXfFAqMHuwUL
+put 9 BBjoQZQrIo GHWbxagHxJSoozYugsYz
+put 5 WXWsCThDHp QlcDoSzjMNzUjYbuVFuX
+put 6 SVfYuDcbyA JofpJrfhgKmxadcCNIkV
+put 7 XvNWEaHLUu QuqiabDbaTtaGmVHGdWB
+put 8 CBZXcWQbbn AbVRIPnXUZbEMRsnPJWh
+put 9 PhFjXfOIqC YkdsYNHsulpvplhdUGeB
+put 5 ZDmGWtrUsv uQHDqvnAkQHURifIfhoY
+put 6 SwvKsJvysx FgEORdUkDwUSzpZuONeO
+put 7 uGOlWzxPIb OphLhWqXJDaDbUWGZFpI
+put 8 EPBAEtYTgO ZzgwOQYvDzvXCcnINZxx
+put 9 xodNPQuCTG hUAYwMraswzvCMxxEYes
+put 5 jLgtbXFXpZ PEpKnpTRuNnOooKeZWvB
+put 6 KYbxmFeRAK IThliXBClIUsrymhaCyA
+put 7 kJPlSoopFq UsbKsjUWHanbHcKlBIjJ
+put 8 eitvrMywAu skmWtQwYDCCIVFWamTCH
+put 9 lrciRxkaEA tRpAKjXcuYPvkNZfYhiw
+put 5 wrdINvVqZJ bEqiuGgmdbZZXbecqwjl
+put 6 IHtblddkox UvhSgoeeKwzIaHSDBYbX
+put 7 fQFVsYSYGq lEeNJpVHktgXHwCosXCF
+put 8 weWyetYBzz GpnLVneXeWuDyvzRlfFe
+put 9 psaEJaHDyr lfZGWYYwWPuuOtvLzCVP
+put 5 wWWRqBWjCD jdgswqABKEfbcueGlobj
+put 6 dbUgoLjKju PBUXtbkcaCNTTVipoWke
+put 7 LmNRtgTpJl seWaWJTLlphEggmyaSDS
+put 8 IxQtXBJWAj YiwjuTOkMSTcOEVHMbKn
+put 9 YBJlaBseCc cXrQOiKtRjEcOisrmtZi
+stabilize
