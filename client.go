@@ -21,27 +21,16 @@ var serverId int
 var serverBasePort int
 var thisClientBasePort int
 var thisClientId int
-
-// client LogicalClock
-var clientLogicalClock = 0
-
 var clientShutDown = false
 
+// client Vector TimeStamp
+var clientVecTs = shared.Clock{thisClientId:1}
+
+type historyValue map[int]shared.Clock
+
+var clientHistory = make(map[string]historyValue)
+
 type ClientMaster int
-
-type historyKey struct {
-	key string
-	clientId int
-}
-
-type latestTsDetail struct {
-	serverId int
-	clock shared.Clock
-}
-
-var latestTimestamp = make(map[string]latestTsDetail)
-var clientHistory = make(map[historyKey]int)
-
 /*
 	Storing connected servers information
  */
@@ -126,116 +115,121 @@ func getClientRpcServer(serverId int) (*rpc.Client, error) {
 
 var clientWaitGroup sync.WaitGroup
 
+func updateClientVecTs(compareClock shared.Clock) {
+	for id, c1 := range compareClock {
+		if clientVecTs[id] < c1 {
+			clientVecTs[id] = c1
+		}
+	}
+}
+
+func pruneClientHistory(key string, vecTs shared.Clock) {
+	if prevEvents, ok := clientHistory[key]; ok {
+		for serverId, ts := range prevEvents {
+			if util.HappenedBefore(ts, vecTs) == util.HAPPENED_BEFORE {
+				delete(clientHistory[key], serverId)
+			}
+		}
+	}
+}
+
+func insertIntoClientHistory(key string, serverId int, vecTs shared.Clock) {
+	if _, ok := clientHistory[key]; ok {
+		pruneClientHistory(key, vecTs)
+		if _, ok := clientHistory[key][serverId]; !ok {
+			clientHistory[key][serverId] = vecTs
+		}
+	} else {
+		clientHistory[key] = make(historyValue)
+		clientHistory[key] = historyValue{serverId:vecTs}
+	}
+}
+
+func checkForDependencyError(key string, serverId int, vecTs shared.Clock) bool{
+	if concurrentEvents, ok := clientHistory[key]; ok {
+		for id, ts := range concurrentEvents {
+			if util.TotalOrderOfEvents(vecTs, serverId, ts, id) != util.HAPPENED_AFTER {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+
 func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool) error {
-	// Increment clients logical clock on receiving a put request from the master
-	clientLogicalClock += 1
+	clientVecTs[thisClientId] += 1
+
 	key := args.Key
 	value := args.Value
 	*retVal = false
-	//log.Println("Received put request for key", key)
-	// Make a put request to the connected server
 
 	if serverId == -1 {
 		return errors.New("connection does not exist")
 	}
-	putArgs := shared.ClientToServerPutArgs{Key: key, Value: value, ClientId: thisClientId, ClientClock: clientLogicalClock}
-	// reply contains vectorTimeStamp corresponding to this transaction
-	var reply shared.Clock
+
 	serverToTalk, err := getClientRpcServer(serverId)
 	if err != nil {
 		return err
 	}
+
+	var reply [2]shared.Clock
+	putArgs := shared.ClientToServerPutArgs{Key: key, Value: value, ClientId: thisClientId, ClientClock: clientVecTs}
 	err = serverToTalk.Call("ServerClient.ServerPut", putArgs, &reply)
 	serverToTalk.Close()
 	if err != nil {
 		return err
 	} else {
-		// On a successful put, add this transaction into the client's history
-		// reply contains the timestamp recorded at the server for this put call
-		//log.Println("Put successful")
-		currKey := historyKey{key, thisClientId}
-		// If some value with same key, clientId pair exists in clientHistory,
-		// we can satisfy both READ_YOUR_WRITES or MONOTONIC_READS by just replacing it
-		clientHistory[currKey] = clientLogicalClock
-
-		if lts, ok := latestTimestamp[key]; ok {
-			if util.TotalOrderOfEvents(lts.clock, lts.serverId, reply, serverId) == util.HAPPENED_BEFORE {
-				currLatestTsDetail := latestTsDetail{serverId:serverId, clock:reply}
-				latestTimestamp[key] = currLatestTsDetail
-			}
-		} else {
-			latestTimestamp[key] = latestTsDetail{clock:reply, serverId:serverId}
-		}
+		insertIntoClientHistory(key, serverId, reply[0])
 		*retVal = true
 	}
-	//log.Println("End of ClientPut::", clientHistory)
+
+	updateClientVecTs(reply[1])
 	return nil
 }
 
 func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	// Increment clients logical clock on receiving a get request from master
-	clientLogicalClock += 1
+	clientVecTs[thisClientId] += 1
 
-	//log.Println("Received get request for key", key)
 	*retVal = false
-	// Make a get request from the connected server
-
 	if serverId == -1 {
 		return errors.New("connection does not exist")
 	}
 
-	// ServerGet rpc replies with the a value from the key-value store
-	reply := new(shared.Value)
+	// ServerGet rpc replies with the a value and its vecTs from the key-value store
+	reply := new(shared.ServerToClientGetReply)
+	reply.Value = shared.Value{}
+	reply.ServerVecTs = shared.Clock{}
 	serverToTalk, err := getClientRpcServer(serverId)
 	if err != nil {
 		return err
 	}
-	//log.Println("Calling ServerGet..")
-	err = serverToTalk.Call("ServerClient.ServerGet", key, &reply)
+	getArgs := shared.ClientToServerGetArgs{Key:key, ClientVecTs:clientVecTs}
+	err = serverToTalk.Call("ServerClient.ServerGet", getArgs, &reply)
 	serverToTalk.Close()
 	if err != nil {
 		return err
 	}
+	updateClientVecTs(reply.ServerVecTs)
 
-	if reply.ClientId == -1 && reply.ServerId == -1 {
+	if reply.Value.ClientId == -1 && reply.Value.ServerId == -1 {
 		log.Println(key, ": ERR_KEY")
 		*retVal = true
 		return nil
 	}
-	// Handle ERR_DEP
-	// reply contains shared.Value == val, vectorTimeStamp, serverId, clientId
 
-	//log.Println("clientHistoryValue: ", clientHistory)
-	if currLatestTsDetail, ok := latestTimestamp[key]; ok {
-		// Get succeeds if the event clearly happened after the event in client history
-		// or if the concurrent events are ordered at least at this client
-		ordering := util.HappenedBefore(reply.Ts, currLatestTsDetail.clock)
-		//log.Println("ordering:", ordering)
-		if ordering == util.HAPPENED_BEFORE {
-			// reply has stale data
-			log.Println(key, ": ERR_DEP")
-			*retVal = true
-			return nil
-		} else if ordering == util.CONCURRENT {
-			if reply.Ts[reply.ClientId] < clientHistory[historyKey{key:key, clientId:reply.ClientId}] {
-				// reply has stale data (reply.clientId and thisClientId are same!)
-				log.Println(key, ": ERR_DEP")
-				*retVal = true
-				return nil
-			}
-		}
+	var errdep = false
+	errdep = checkForDependencyError(key, reply.Value.ServerId, reply.Value.Ts)
+	if errdep == true {
+		log.Println(key, ": ERR_DEP")
+		*retVal = true
+		return nil
 	}
 
-	// There is no history of reads/writes from this client for key
-	latestTimestamp[key] = latestTsDetail{serverId:reply.ServerId, clock:reply.Ts}
-	clientHistory[historyKey{key:key, clientId:reply.ClientId}] = reply.Ts[reply.ClientId]
-	log.Println(key, ": ", reply.Val)
-
+	insertIntoClientHistory(key, serverId, reply.Value.Ts)
+	log.Println(key, ": ", reply.Value.Val)
 	*retVal = true
-	// Add this transaction to clientHistory
-	//log.Println("End of ClientGet - clientHistory", clientHistory, "latestTimestamp", latestTimestamp)
-
-	// If successful
 	return nil
 }
 
@@ -266,7 +260,6 @@ func clientListenToMaster() error {
 		}
 		rpc.ServeConn(clientMasterConnection)
 	}
-
 	return nil
 }
 

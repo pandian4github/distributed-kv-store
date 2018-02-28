@@ -27,7 +27,18 @@ type MasterToClientPutArgs struct {
 
 type ClientToServerPutArgs struct {
 	Key, Value string
-	ClientId, ClientClock int
+	ClientId int
+	ClientClock Clock
+}
+
+type ServerToClientGetReply struct {
+	Value Value
+	ServerVecTs Clock
+}
+
+type ClientToServerGetArgs struct {
+	Key string
+	ClientVecTs Clock
 }
 
 /*

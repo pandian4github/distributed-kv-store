@@ -25,10 +25,10 @@ import (
 var thisServerId int
 var thisBasePort int
 
-var thisVecTs = shared.Clock {}
+var thisVecTs = shared.Clock{}
 
 // Maps serverId to host:basePort of that server
-var otherServers = map[int]string {}
+var otherServers = map[int]string{}
 
 // Maintains a map of open connections to the other servers
 //var serverRpcClientMap = map[int]*rpc.Client {}
@@ -46,25 +46,25 @@ var clientListener net.Listener
 var mutex = &sync.Mutex{}
 
 type ServerPacketPair struct {
-	ServerId int
+	ServerId     int
 	DataPacketId int // data packet belonging to the server
 }
 
 // Flag to check if data is received from all other servers during a stabilize call
-var dataReceivedFrom = map[int]shared.StabilizeDataPacket {}
-var dbReceivedFrom = map[int]DB {}
-var isDataReceivedFrom = map[int]int {}
+var dataReceivedFrom = map[int]shared.StabilizeDataPacket{}
+var dbReceivedFrom = map[int]DB{}
+var isDataReceivedFrom = map[int]int{}
 var numServersReceivedFrom = 0
 var allConnections = map[int]map[int]string{}
-var propagatedToServer = map[int]map[int]int {} // {x: y} to denote if y's data is already propagated to x
-var clockDuringStabilize = shared.Clock {}
-var serverHasDataPacketMap = map[ServerPacketPair]int {}
+var propagatedToServer = map[int]map[int]int{} // {x: y} to denote if y's data is already propagated to x
+var clockDuringStabilize = shared.Clock{}
+var serverHasDataPacketMap = map[ServerPacketPair]int{}
 
 // Core data structures which hold the actual data of the key-value store
 type DB map[string]shared.Value
 
-var persistedDb = DB {} // the DB after the last stabilize call
-var inFlightDb = DB {} // the DB which is not yet stabilized with other server nodes
+var persistedDb = DB{} // the DB after the last stabilize call
+var inFlightDb = DB{}  // the DB which is not yet stabilized with other server nodes
 
 func getServerRpcClient(serverId int) (*rpc.Client, error) {
 	// Commenting because using open connection led to some issues
@@ -72,7 +72,7 @@ func getServerRpcClient(serverId int) (*rpc.Client, error) {
 	//	return client, nil
 	//}
 	if hostBasePortPair, ok := otherServers[serverId]; ok {
-		basePortStr := strings.Split(hostBasePortPair,  ":")[1]
+		basePortStr := strings.Split(hostBasePortPair, ":")[1]
 		basePort, err := strconv.Atoi(basePortStr)
 		if err != nil {
 			return nil, err
@@ -117,6 +117,7 @@ func getOtherServerDetails(str string) error {
 Implementation of different RPC methods exported by server to master
 */
 type ServerMaster int
+
 func (t *ServerMaster) AddNewServer(newServer *shared.NewServerArgs, status *bool) error {
 	newServerId := newServer.ServerId
 	hostPortPair := newServer.HostPortPair
@@ -166,7 +167,7 @@ func (t *ServerMaster) CreateConnection(newServer *shared.NewServerArgs, status 
 }
 
 func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
-	var printed = map[string]bool {}
+	var printed = map[string]bool{}
 	log.Println("Printing DB contents from server", thisServerId)
 	log.Println("{")
 	for k, v := range inFlightDb {
@@ -221,8 +222,8 @@ func sendMyDataToNeighbors() error {
 		}
 
 		log.Println("Sending inFlightData to server", serverId)
-		var thisServerDataPacket = shared.StabilizeDataPacket{InFlightDB:inFlightDb, VecTs:thisVecTs, Peers:otherServers}
-		var args = shared.SendDataPacketsRequest{ServerId:thisServerId, DataPackets:shared.StabilizeDataPackets{thisServerId:thisServerDataPacket}}
+		var thisServerDataPacket = shared.StabilizeDataPacket{InFlightDB: inFlightDb, VecTs: thisVecTs, Peers: otherServers}
+		var args = shared.SendDataPacketsRequest{ServerId: thisServerId, DataPackets: shared.StabilizeDataPackets{thisServerId: thisServerDataPacket}}
 
 		var reply bool
 		client.Call("ServerServer.SendDataPackets", args, &reply)
@@ -237,11 +238,11 @@ func sendMyDataToNeighbors() error {
 }
 
 func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
-	toPropagatePacketsAll := map[int]shared.StabilizeDataPackets {}
+	toPropagatePacketsAll := map[int]shared.StabilizeDataPackets{}
 	for neighbor := range otherServers {
-		toPropagatePackets := shared.StabilizeDataPackets {}
+		toPropagatePackets := shared.StabilizeDataPackets{}
 		if _, ok := propagatedToServer[neighbor]; !ok {
-			propagatedToServer[neighbor] = map[int]int {}
+			propagatedToServer[neighbor] = map[int]int{}
 		}
 
 		mutex.Lock()
@@ -249,7 +250,7 @@ func getUpdatesToPropagate() (map[int]shared.StabilizeDataPackets, error) {
 		for dataPacketId, dataPacket := range dataReceivedFrom {
 			_, neighborConnected := neighborConnections[dataPacketId]
 			if propagatedToServer[neighbor][dataPacketId] == 0 && !neighborConnected && neighbor != dataPacketId &&
-				serverHasDataPacketMap[ServerPacketPair{ServerId:neighbor, DataPacketId:dataPacketId}] == 0 {
+				serverHasDataPacketMap[ServerPacketPair{ServerId: neighbor, DataPacketId: dataPacketId}] == 0 {
 				toPropagatePackets[dataPacketId] = dataPacket
 			}
 		}
@@ -332,7 +333,7 @@ func (t *ServerMaster) Stabilize(dummy int, status *bool) error {
 			log.Println("Sending transitive updates to server", neighbor, "with", len(dataPackets), "other server information..")
 
 			var reply bool
-			args := shared.SendDataPacketsRequest{ServerId:thisServerId, DataPackets:dataPackets}
+			args := shared.SendDataPacketsRequest{ServerId: thisServerId, DataPackets: dataPackets}
 			//TODO probably add a retry logic here because there are high chances for multiple servers to be propagating
 			// data to the server at the same time in which case on will fail
 			client.Call("ServerServer.SendDataPackets", args, &reply)
@@ -375,7 +376,7 @@ func listenToMaster() error {
 	rpcServer.RegisterName("ServerMaster", serverMaster)
 
 	log.Println("Listening to master on port", portToListen)
-	l, e := net.Listen("tcp", "localhost:" + strconv.Itoa(portToListen))
+	l, e := net.Listen("tcp", "localhost:"+strconv.Itoa(portToListen))
 	if e != nil {
 		log.Fatal(e)
 	}
@@ -410,10 +411,11 @@ func listenToMaster() error {
 Implementation of different RPC methods exported by server to other servers
 */
 type ServerServer int
+
 func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDataResponse) error {
 	log.Println("Got bootstrap request from server", serverId)
-	response.PersistedDb = map[string]shared.Value {}
-	response.VecTs = shared.Clock {}
+	response.PersistedDb = map[string]shared.Value{}
+	response.VecTs = shared.Clock{}
 	for k, v := range persistedDb {
 		response.PersistedDb[k] = v
 	}
@@ -433,7 +435,7 @@ func (t *ServerServer) SendDataPackets(request shared.SendDataPacketsRequest, re
 			log.Println("Ignoring data packet of server", serverId, "with ts ", dataPacket.VecTs, "my ts", thisVecTs)
 			continue
 		}
-		serverHasDataPacketMap[ServerPacketPair{ServerId:request.ServerId, DataPacketId:serverId}] = 1
+		serverHasDataPacketMap[ServerPacketPair{ServerId: request.ServerId, DataPacketId: serverId}] = 1
 		if isDataReceivedFrom[serverId] == 0 {
 			isDataReceivedFrom[serverId] = 1
 
@@ -442,7 +444,7 @@ func (t *ServerServer) SendDataPackets(request shared.SendDataPacketsRequest, re
 
 			log.Println("Updating the vector clock according to vector clock of server", serverId)
 			updateClockDuringStabilize(dataPacket.VecTs)
-			connections := map[int]string {}
+			connections := map[int]string{}
 			for k, v := range dataPacket.Peers {
 				connections[k] = v
 				// k is the neighbor's neighbor
@@ -476,7 +478,7 @@ func listenToServers() error {
 
 	log.Println("Listening to servers on port", portToListen)
 	var e error
-	serverListener, e = net.Listen("tcp", util.LOCALHOST_PREFIX + strconv.Itoa(portToListen))
+	serverListener, e = net.Listen("tcp", util.LOCALHOST_PREFIX+strconv.Itoa(portToListen))
 	if e != nil {
 		log.Fatal(e)
 	}
@@ -507,66 +509,62 @@ Implementation of different RPC methods exported by server to clients
 */
 type ServerClient int
 
-func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *shared.Clock) error {
-	// Resolve putArgs parameter
+func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *[2]shared.Clock) error {
 	key := putArgs.Key
 	value := putArgs.Value
 	clientId := putArgs.ClientId
 	clientClock := putArgs.ClientClock
 
-	// Increment servers logical clock on receiving a put request from the client
 	incrementMyClock()
-	// Update the client timeStamp
-	if thisVecTs[clientId] < clientClock {
-		thisVecTs[clientId] = clientClock
-	}
-	//log.Println("ServerPut.. ", thisVecTs)
+	updateMyClock(clientClock)
 
 	// Update/Write to the inFlightDb
-	newValue := shared.Value{Val: value, Ts: thisVecTs, ServerId: thisServerId, ClientId: clientId}
+	var valTs = make(map[int]int)
+	util.CopyVecTs(thisVecTs, &valTs)
+	newValue := shared.Value{Val: value, Ts: valTs, ServerId: thisServerId, ClientId: clientId}
 	prevValue, exists := inFlightDb[key]
+
 	if exists == false {
-		// Create a new entry into the inFlightDb
-		//log.Println("Creating new key..")
 		inFlightDb[key] = newValue
-		*reply = newValue.Ts
+		reply[0] = newValue.Ts
 	} else {
 		// Compare the timeStamps of the values and either update or ignore
 		ordering := util.TotalOrderOfEvents(prevValue.Ts, prevValue.ServerId, newValue.Ts, newValue.ServerId)
 		if ordering == util.HAPPENED_BEFORE {
-			//log.Println("Updating the value..")
 			inFlightDb[key] = newValue
-			*reply = newValue.Ts
+			reply[0] = newValue.Ts
 		} else {
-			//log.Println("Using existing value..")
-			*reply = prevValue.Ts
+			reply[0] = prevValue.Ts
 		}
 	}
-	// Set the timestamp of this transaction to the return value
+	reply[1] = thisVecTs
 	return nil
 }
 
-func (t *ServerClient) ServerGet(key string, reply *shared.Value) error {
-	// Increment the clock on receiving a get request from client
+func (t *ServerClient) ServerGet(getArgs shared.ClientToServerGetArgs, reply *shared.ServerToClientGetReply) error {
 	incrementMyClock()
+	updateMyClock(getArgs.ClientVecTs)
 
-	//log.Println("Received get request for key", key)
-	// Check for the key in inFlightDb first.
+	key := getArgs.Key
+
 	value, ok := inFlightDb[key]
 	if ok {
-		*reply = value
+		reply.Value = value
+		reply.ServerVecTs = thisVecTs
 		return nil
 	}
-	// Check for the key in persistedDb
+
 	value, ok = persistedDb[key]
 	if ok {
-		*reply = value
+		reply.Value = value
+		reply.ServerVecTs = thisVecTs
 		return nil
 	}
-	// key is not found in both inFlightDb and persistedDb
-	reply.Val = "ERR_NO_KEY"
-	reply.ServerId = -1
-	reply.ClientId = -1
+
+	reply.Value.Val = "ERR_NO_KEY"
+	reply.Value.ServerId = -1
+	reply.Value.ClientId = -1
+	reply.ServerVecTs = thisVecTs
 	return nil
 }
 
@@ -581,7 +579,7 @@ func listenToClients() error {
 
 	log.Println("Listening to clients on port", portToListen)
 	var e error
-	clientListener, e = net.Listen("tcp", util.LOCALHOST_PREFIX + strconv.Itoa(portToListen))
+	clientListener, e = net.Listen("tcp", util.LOCALHOST_PREFIX+strconv.Itoa(portToListen))
 	if e != nil {
 		log.Fatal(e)
 	}
@@ -609,7 +607,16 @@ func listenToClients() error {
 }
 
 func incrementMyClock() {
+	log.Print("Incrementing server clock")
 	thisVecTs[thisServerId]++
+}
+
+func updateMyClock(compareClock shared.Clock) {
+	for id, c1 := range compareClock {
+		if thisVecTs[id] < c1 {
+			thisVecTs[id] = c1
+		}
+	}
 }
 
 func bootstrapFromServer(serverId int) error {

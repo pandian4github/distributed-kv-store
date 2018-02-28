@@ -28,10 +28,10 @@ func TotalOrderOfEvents(ts1 map[int]int, s1 int, ts2 map[int]int, s2 int) int {
 		return ordering
 	}
 	// Deterministic ordering if the events are concurrent
-	if s1 < s2 {
+	if s1 > s2 {
 		return HAPPENED_BEFORE
 	}
-	if s1 > s2 {
+	if s1 < s2 {
 		return HAPPENED_AFTER
 	}
 	if ts1[s1] < ts2[s1] {
@@ -78,6 +78,12 @@ func HappenedBefore(ts1, ts2 map[int]int) int {
 		return HAPPENED_BEFORE
 	}
 	return HAPPENED_AFTER
+}
+
+func CopyVecTs(copyFrom map[int]int, copyTo *map[int]int) {
+	for k, v := range copyFrom {
+		(*copyTo)[k] = v
+	}
 }
 
 func EncodeMapIntStringToStringGob(mp map[int]string) (string, error) {
