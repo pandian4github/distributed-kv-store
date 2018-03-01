@@ -2,9 +2,9 @@
 This is the implementation distributed key-value store. The key-value store provides eventual consistency plus two session guarantees: Read Your Writes and Monotonic Reads. There can be upto 5 servers and 5 clients communicating simultaneously in the kv-store with no shared memory, and these servers and clients are assumed to be different processes on a single machine. 
 
 ### Contributors
-	Pandian Raju (UT EID: , UTCS ID: )
-	Soujanya Ponnappalli (UT EID: , UTCS ID: )
-	Rohan Kadekodi (UT EID: RAK2575, UTCS ID: RAK)
+	Pandian Raju (UT EID: pr22695, UTCS ID: pandian)
+	Soujanya Ponnapalli (UT EID: sp43596, UTCS ID: soujanya)
+	Rohan Kadekodi (UT EID: rak2575, UTCS ID: rak)
 
 ### Language used
 The distributed key-value store has been implemented in Golang. 
