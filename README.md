@@ -28,11 +28,15 @@ The key-value store can be executed with the following command:
 
 #### Checking the output
 The shell gives the outputs of the commands.
-The logs of the clients or servers can be checked in logs/server<serverID>.log or logs/client<clientID>.log
+The server and client logs can be checked in the following files:
+	
+	logs/server[serverId].log
+	logs/client[clientId].log
 
 ### Code Details
-The file master.go contains the code of the master process.
-The file server.go contains the code of the server process.
-The file client.go contains the code of the client process.
-The file util/util.go contains the common utilities like the logic for total ordering of events, creating RPC connections, etc.
-The file shared/shared_structs.go mostly contains the arguments that are passed during the RPC calls between different processes.
+	
+	The file master.go contains the code of the master process.
+	The file server.go contains the code of the server process.
+	The file client.go contains the code of the client process.
+	The file util/util.go contains the common utilities like the logic for total ordering of events, creating RPC connections, etc.
+	The file shared/shared_structs.go mostly contains the arguments that are passed during the RPC calls between different processes.
