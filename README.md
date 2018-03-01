@@ -9,6 +9,7 @@ Golang should be installed in order to run the key-value store.
 
 ### Compiling files
 The program files can be compiled using the following commands:
+	
 	go build master.go
 	go build server.go
 	go build client.go
@@ -21,12 +22,13 @@ A directory named 'logs' should be created in the root directory of the reposito
 The commands to be executed should be written in a text file, in the same format as that described in the project document [here](http://www.cs.utexas.edu/~vijay/cs380D-s18/project1.pdf). Each command should be written on a new line. An example commands file is commands.txt in the repository. 
 
 #### Running the key-value store
-	#The key-value store can be executed with the following command: 
+The key-value store can be executed with the following command: 
+	
 	go run master.go commands.txt
 
 #### Checking the output
-	The shell gives the outputs of the commands.
-	The logs of the clients or servers can be checked in logs/server<serverID>.log or logs/client<clientID>.log
+The shell gives the outputs of the commands.
+The logs of the clients or servers can be checked in logs/server<serverID>.log or logs/client<clientID>.log
 
 ### Code Details
 The file master.go contains the code of the master process.
