@@ -257,6 +257,8 @@ func joinClient(args []string) error {
 
 	cmd.Start()
 
+	addToServerClientMapping(serverId, clientId)
+
 	_, err = getMasterRpcClient(clientId)
 	if err != nil {
 		log.Fatal("Failed: rpc.Dail from Master to Client", err)

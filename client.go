@@ -18,7 +18,6 @@ import (
   Attributes of this client
 */
 var serverId int
-var serverBasePort int
 var thisClientBasePort int
 var thisClientId int
 var clientShutDown = false
@@ -62,15 +61,17 @@ func (t *ClientMaster) CreateConnection(server *shared.ClientServerConnectionArg
 		serverId = -1
 	}
 
+	log.Println("New default server to talk:", serverId, "on base port", clientServerBasePortMap[serverId])
+
 	*status = true
 	return nil
 }
 
 func (t *ClientMaster) BreakConnection(removeServer *shared.RemoveServerArgs, status *bool) error {
-	serverId := removeServer.ServerId
+	serverIdToRemove := removeServer.ServerId
 	log.Println("Breaking connection between this client", thisClientId, "and server", serverId)
-	delete(clientServerBasePortMap, serverId)
-	delete(clientRpcServerMap, serverId)
+	delete(clientServerBasePortMap, serverIdToRemove)
+	delete(clientRpcServerMap, serverIdToRemove)
 
 	/* To get the lowest serverId in the open connections */
 	var serverIds []int
@@ -85,6 +86,8 @@ func (t *ClientMaster) BreakConnection(removeServer *shared.RemoveServerArgs, st
 		serverId = -1
 	}
 
+	log.Println("New default server to talk:", serverId, "on port", clientServerBasePortMap[serverId])
+
 	*status = true
 	return nil
 }
@@ -96,12 +99,12 @@ func (t *ClientMaster) KillClient(dummy int, status *bool) error {
 	return nil
 }
 
-func getClientRpcServer(serverId int) (*rpc.Client, error) {
+func getClientRpcServer() (*rpc.Client, error) {
 	//if server, ok := clientRpcServerMap[serverId]; ok {
 	//	return server, nil
 	//}
 	// servers listen to clients on serverBasePort+2
-	serverBasePort = clientServerBasePortMap[serverId]
+	serverBasePort := clientServerBasePortMap[serverId]
 	portToConnect := serverBasePort + 2
 	hostPortPair := util.LOCALHOST_PREFIX + strconv.Itoa(portToConnect)
 	conn, err := util.DialWithRetry(hostPortPair)
@@ -159,7 +162,7 @@ func (t *ClientMaster) ClientPut(args shared.MasterToClientPutArgs, retVal *bool
 		return errors.New("connection does not exist")
 	}
 
-	serverToTalk, err := getClientRpcServer(serverId)
+	serverToTalk, err := getClientRpcServer()
 	if err != nil {
 		return err
 	}
@@ -186,6 +189,7 @@ func incrementMyClientClock() {
 func (t *ClientMaster) ClientGet(key string, retVal *string) error {
 	// Increment clients logical clock on receiving a get request from master
 	incrementMyClientClock()
+
 	if serverId == -1 {
 		return errors.New("connection does not exist")
 	}
@@ -194,7 +198,7 @@ func (t *ClientMaster) ClientGet(key string, retVal *string) error {
 	reply := new(shared.ServerToClientGetReply)
 	reply.Value = shared.Value{}
 	reply.ServerVecTs = shared.Clock{}
-	serverToTalk, err := getClientRpcServer(serverId)
+	serverToTalk, err := getClientRpcServer()
 	if err != nil {
 		return err
 	}
@@ -269,7 +273,7 @@ func main() {
 		log.Fatal("Unable to get the serverId", serverId)
 	}
 
-	serverBasePort, err = strconv.Atoi(args[3])
+	serverBasePort, err := strconv.Atoi(args[3])
 	if err != nil {
 		log.Fatal("Unable to get the server basePort", serverBasePort)
 	}

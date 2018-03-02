@@ -98,7 +98,7 @@ During stabilize, each server first propagates its own InFlightDB along with the
 During a network partition, the stabilize command will makes the nodes within a partition consistent. When a connection is made between two servers (which connects two partitions), the servers initially exchange their persistedDBs with each other (which are added to the inFlightDB of the servers) since they will be having different persistedDBs after their previous stabilizes. This ensures that during the next stabilize command, all the servers within the network will become consistent and end up with the same copy of persistedDB.  
  
 #### Killing a server
-Killing a server just sends a kill command to the corresponding server (which will then exit) and also notifies the other servers about the killed server so that they can remove the server from the cluster. Note that kill doesn't notify the clients which were connected to that server about the server being killed.
+Killing a server sends a kill command to the corresponding server (which will then exit) and also notifies the other servers about the killed server so that they can remove the server from the cluster. It also notifies the clients which were connected to that server about the server being killed.
 
 #### Creating or breaking connection
 Creating or breaking connection between two servers notifies both servers about the change while doing the same between a client and a server notifies just the client about the change (since server doens't maintain open connections with clients but vice-versa). 
