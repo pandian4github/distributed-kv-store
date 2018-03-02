@@ -30,11 +30,16 @@ The key-value store can be executed with the following command:
 	for example: go run master.go commands.txt
 
 #### Checking the output
-The stdout gives the output of the master process.
+The stdout gives the output of the master process and the output of the commands like get or printStore.
 The server and client logs contain the outputs of the respective server or client and can be checked in the following files:
 	
 	logs/server[serverId].log
 	logs/client[clientId].log
+	
+For ease of checking the logs, redirect the entire log to some file and grep for CMD_OUTPUT to check only the output of the commands. You can also grep for THROUGHPUT to look at the timer information. For example, to just look at these two sets of logs, 
+    
+    go run master.go commands.txt &> out.log
+    cat out.log | grep -e CMD_OUTPUT -e THROUGHPUT  
 
 #### Test cases
 We have written a suite of test cases for which the key-value store has been tested. The test cases are in the folder named 'test_cases'.
@@ -89,6 +94,8 @@ In case the <value, timestamp, serverId> for the key is returned by the server, 
 The stabilize command results in the exchange of InFlightDBs of all the connected servers, and storing of the InFlightDBs in the PersistedDBs. At the end of stabilize, the InFlightDBs of all the servers are empty, and the PersistedDBs of all the servers reflect the same database.  
 
 During stabilize, each server first propagates its own InFlightDB along with the IDs of its neighbours to all of its directly connected servers. Then it does transitive propagation, where it propagates the InFlightDB received from one server 'X' to its neighbor 'Y' if it sees that 'X' and 'Y' are not connected directly. This is done at all servers, and it is done until the point that all the servers have received the InFlightDBs of all the other directly and indirectly connected servers. An important thing to note is that the servers do not know the entire network topology (since the master doesn't store this state), rather it gets to know the topology as it keeps sending and receiving transitive updates.
+
+During a network partition, the stabilize command will makes the nodes within a partition consistent. When a connection is made between two servers (which connects two partitions), the servers initially exchange their persistedDBs with each other (which are added to the inFlightDB of the servers) since they will be having different persistedDBs after their previous stabilizes. This ensures that during the next stabilize command, all the servers within the network will become consistent and end up with the same copy of persistedDB.  
  
 
 
