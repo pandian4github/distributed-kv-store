@@ -47,6 +47,9 @@ var portsUsed = 5001
 // Maps the server/client ids to the ports in which they would be listening
 var portMapping = map[int]int {}
 
+// Maps the serverId to a list of clients connected to the server
+var serverToClientsMapping = map[int]map[int]int {}
+
 // Maintains if a server/client is active or not
 //var isNodeAlive = map[int]bool {}
 
@@ -170,6 +173,7 @@ func killServer(args []string) error {
 		return err
 	}
 
+	// Notify all servers about the killed server
 	for k := range portMapping {
 		if nodeType, ok := nodeType[k]; ok && nodeType == NODE_SERVER {
 			client, err := getMasterRpcClient(k)
@@ -189,10 +193,32 @@ func killServer(args []string) error {
 		}
 	}
 
+	// Notify the connected clients about the killed server
+	if connectedClients, ok := serverToClientsMapping[serverId]; ok {
+		for clientId := range connectedClients {
+			removeConnectionBetweenClientServer(clientId, serverId)
+		}
+	}
+
 	// If server is successfully killed, remove it from active list and portMapping
 	delete(portMapping, serverId)
+	delete(serverToClientsMapping, serverId)
 
 	return nil
+}
+
+func addToServerClientMapping(serverId, clientId int) {
+	if _, ok := serverToClientsMapping[serverId]; !ok {
+		serverToClientsMapping[serverId] = map[int]int {}
+	}
+	serverToClientsMapping[serverId][clientId] = 1
+}
+
+func removeFromServerClientMapping(serverId, clientId int) {
+	if _, ok := serverToClientsMapping[serverId]; !ok {
+		return
+	}
+	delete(serverToClientsMapping[serverId], clientId)
 }
 
 func joinClient(args []string) error {
@@ -260,6 +286,7 @@ func removeConnectionBetweenClientServer(clientId int, serverId int) error {
 		log.Fatal("Reply status is false. Break connection failed.")
 	}
 
+	removeFromServerClientMapping(serverId, clientId)
 	return nil
 }
 
@@ -305,6 +332,7 @@ func addConnectionBetweenClientServer(clientId int, serverId int) error {
 		log.Fatal("Reply status is false. Create connection failed.")
 	}
 
+	addToServerClientMapping(serverId, clientId)
 	return nil
 }
 
