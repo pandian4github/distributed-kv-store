@@ -90,7 +90,6 @@ func closeAllClients() error {
 }
 
 func joinServer(args []string) error {
-	// TODO when a new server is added, it should fetch the persistedDb so far from the other nodes. It should be implemented.
 	serverId, err := strconv.Atoi(args[1])
 	if err != nil {
 		return err
@@ -139,11 +138,6 @@ func joinServer(args []string) error {
 
 	cmd.Start()
 
-	//isNodeAlive[serverId] = true
-
-	/*
-	TODO: Notify other servers about this new server added using RPC calls.
-	 */
 	for k := range otherServers {
 		client, err := getMasterRpcClient(k)
 		if err != nil {
@@ -165,6 +159,7 @@ func joinServer(args []string) error {
 	if err != nil {
 		return errors.New("unable to connect to server RPC from master")
 	}
+	log.Println("CMD_OUTPUT:", "joinServer done.")
 
 	return nil
 }
@@ -196,7 +191,6 @@ func killServer(args []string) error {
 
 	// If server is successfully killed, remove it from active list and portMapping
 	delete(portMapping, serverId)
-	//isNodeAlive[serverId] = false
 
 	return nil
 }
@@ -243,6 +237,7 @@ func joinClient(args []string) error {
 		return err
 	}
 
+	log.Println("CMD_OUTPUT:", "joinClient done.")
 	return nil
 }
 
@@ -371,7 +366,7 @@ func breakConnection(args []string) error {
 				}
 			}
 
-			// If successful
+			log.Println("CMD_OUTPUT:", "breakConnection done.")
 			return nil
 		}
 	}
@@ -405,7 +400,7 @@ func createConnection(args []string) error {
 				}
 			}
 
-			// If successful
+			log.Println("CMD_OUTPUT:", "createConnection done.")
 			return nil
 		}
 	}
@@ -440,6 +435,7 @@ func stabilize(args []string) error {
 	}
 	// Wait till the stabilize completes on all servers
 	waitTillStabilize.Wait()
+	log.Println("CMD_OUTPUT:", "Stabilize done.")
 	return nil
 }
 
@@ -460,14 +456,14 @@ func printStore(args []string) error {
 		return err
 	}
 
-	log.Println("Printing the DB contents of server", serverId)
-	var reply bool
+	log.Println("CMD_OUTPUT:", "Printing the DB contents of server", serverId)
+	var reply map[string]string
 	client.Call("ServerMaster.PrintStore", 0, &reply)
-	if reply {
-		log.Println("Successfully printed DB contents of server", serverId)
-	} else {
-		log.Fatal("Reply status is false. PrintStore command failed.")
+	log.Println("CMD_OUTPUT:", "{")
+	for k, v := range reply {
+		log.Println("CMD_OUTPUT:", k, ":", v)
 	}
+	log.Println("CMD_OUTPUT:", "}")
 
 	return nil
 }
@@ -497,11 +493,7 @@ func put(args []string) error {
 		log.Fatal(err)
 	}
 
-	if reply != true {
-		log.Fatal("ClientPut was not successful!")
-	}
-
-	// If successful
+	log.Println("CMD_OUTPUT:", "Put successful.")
 	return nil
 }
 
@@ -522,17 +514,14 @@ func get(args []string) error {
 		log.Fatal("Failed: rpc.Dail from Master to Client", err)
 		return err
 	}
-	var reply bool
+	var reply string
 	err = client.Call("ClientMaster.ClientGet", key, &reply)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if reply != true {
-		log.Fatal("ClientGet was not successful")
-	}
+	log.Println("CMD_OUTPUT:", key, ":", reply)
 
-	// If successful
 	return nil
 }
 
@@ -619,8 +608,8 @@ func main() {
 		} else {
 			log.Println("Error: unknown command to the key-value store", parts[0])
 		}
-		log.Println("Execution over for command:", line)
-		log.Println("------------------------------------------------------------")
+		log.Println("CMD_OUTPUT:", "Execution over for command:", line)
+		log.Println("CMD_OUTPUT:", "------------------------------------------------------------")
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -629,14 +618,15 @@ func main() {
 
 	killAllServersAndClients()
 
-	log.Println("---------------- Timer and throughput information ----------------")
+	throughput := "THROUGHPUT:"
+	log.Println(throughput, "---------------- Timer and throughput information ----------------")
 	for k, v := range numOps {
-		log.Println(v, k, "ops: latency -", minTime[k], "(min)", maxTime[k], "(max)", Round(cumulativeTime[k].Seconds() * 1000.0 / float64(v), 2), "ms (avg);",
+		log.Println(throughput, v, k, "ops: latency -", minTime[k], "(min)", maxTime[k], "(max)", Round(cumulativeTime[k].Seconds() * 1000.0 / float64(v), 2), "ms (avg);",
 				"average throughput -", Round(float64(v) / cumulativeTime[k].Seconds(), 2), "ops/sec")
 	}
 	overallDuration := time.Since(globalStart)
-	log.Println("Overall duration:", overallDuration, "totalOps:", totalOps)
-	log.Println("Overall average latency (for all ops):", overallDuration / time.Duration(totalOps))
-	log.Println("Overall average throughput (for all ops):", float64(totalOps) / overallDuration.Seconds())
-	log.Println("------------------------------------------------------------------")
+	log.Println(throughput, "Overall duration:", overallDuration, "totalOps:", totalOps)
+	log.Println(throughput, "Overall average latency (for all ops):", overallDuration / time.Duration(totalOps))
+	log.Println(throughput, "Overall average throughput (for all ops):", float64(totalOps) / overallDuration.Seconds())
+	log.Println(throughput, "------------------------------------------------------------------")
 }

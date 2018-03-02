@@ -183,10 +183,9 @@ func incrementMyClientClock() {
 	thisClientVecTs[thisClientId]++
 }
 
-func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
+func (t *ClientMaster) ClientGet(key string, retVal *string) error {
 	// Increment clients logical clock on receiving a get request from master
 	incrementMyClientClock()
-	*retVal = false
 	if serverId == -1 {
 		return errors.New("connection does not exist")
 	}
@@ -208,22 +207,18 @@ func (t *ClientMaster) ClientGet(key string, retVal *bool) error {
 	util.UpdateMyClock(&thisClientVecTs, reply.ServerVecTs)
 
 	if reply.Value.ClientId == -1 && reply.Value.ServerId == -1 {
-		log.Println(key, ": ERR_KEY")
-		*retVal = true
-		return nil
+		*retVal = "ERR_KEY"
+	} else {
+		var errDep = false
+		errDep = checkForDependencyError(key, reply.Value.ServerId, reply.Value.Ts)
+		insertIntoClientHistory(key, serverId, reply.Value.Ts)
+		if errDep == true {
+			*retVal = "ERR_DEP"
+		} else {
+			*retVal = reply.Value.Val
+		}
 	}
 
-	var errDep = false
-	errDep = checkForDependencyError(key, reply.Value.ServerId, reply.Value.Ts)
-	insertIntoClientHistory(key, serverId, reply.Value.Ts)
-	if errDep == true {
-		log.Println(key, ": ERR_DEP")
-		*retVal = true
-		return nil
-	}
-
-	log.Println(key, ": ", reply.Value.Val)
-	*retVal = true
 	return nil
 }
 

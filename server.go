@@ -210,22 +210,13 @@ func (t *ServerMaster) CreateConnection(newServer *shared.NewServerArgs, status 
 	return nil
 }
 
-func (t *ServerMaster) PrintStore(dummy int, status *bool) error {
-	var printed = map[string]bool{}
-	log.Println("Printing DB contents from server", thisServerId)
-	log.Println("{")
-	for k, v := range inFlightDb {
-		log.Println(k, ": ", v.Val)
-		printed[k] = true
-	}
+func (t *ServerMaster) PrintStore(dummy int, response *map[string]string) error {
 	for k, v := range persistedDb {
-		if !printed[k] {
-			log.Println(k, ": ", v.Val)
-			printed[k] = true
-		}
+		(*response)[k] = v.Val
 	}
-	log.Println("}")
-	*status = true
+	for k, v := range inFlightDb {
+		(*response)[k] = v.Val
+	}
 	return nil
 }
 
@@ -625,7 +616,7 @@ func (t *ServerClient) ServerGet(getArgs shared.ClientToServerGetArgs, reply *sh
 
 	value, found := Get(getArgs.Key)
 	if !found {
-		value.Val = "ERR_NO_KEY"
+		value.Val = "ERR_KEY"
 		value.ServerId = -1
 		value.ClientId = -1
 	}
