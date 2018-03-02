@@ -50,7 +50,8 @@ At the end of the master program execution, throughput information for the indiv
 #### Killing running processes
 The master program has been set to kill all the clients and servers that it started, at the end. But if any processes are still running, the scripts under scripts/ folder can be used to kill them.
     
-    ./scripts/kill_all_processes.sh
+    cd scripts
+    ./kill_all_processes.sh
 
 ### Implementation Details
 	
