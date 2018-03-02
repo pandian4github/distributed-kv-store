@@ -60,7 +60,7 @@ The master program has been set to kill all the clients and servers that it star
 	The file util/util.go contains the common utilities like the logic for total ordering of events, creating RPC connections, etc.
 	The file shared/shared_structs.go mostly contains the arguments that are passed during the RPC calls between different processes.
 
-#### key-value store design
+#### How are the key-value pairs stored?  
 The server processes do not share memory. Therefore, the key-value store is replicated in all the servers. The key-value store is basically a hashmap from key to value, stored in the memory of each server process. At any server, there are two hashmaps maintained: 
 * the key-value pairs that are not yet communicated to other servers (new insertions from the last stabilize) are stored in 'InFlightDB'; 
 * the key-value pairs that have been communicated to all the other connected servers (all data inserted until the last stabilize) are stored in 'PersistedDB'.
@@ -69,7 +69,7 @@ PersistedDB is consistent across all the servers at any point in time while InFl
 
 Total ordering (persist value from lower server id, if concurrent) is issued to ensure that only the most recent value of a particular key is stored in InFlightDB and PersistedDB. However, there can be multiple values for a single key across servers in their InFlightDBs, as the InFlightDB contains the key-value pairs that are not yet communicated between servers. 
 
-#### Clock
+#### Synchronization between nodes
 To provide eventual consistency and the two session guarantees, the key-value store uses vector clocks. The vector clock is a map of serverId (or clientId) versus a logical counter (logical clock of that server or client). Each event at a server or client causes its logical counter to be incremented. 
 
 #### Starting a server
@@ -97,8 +97,8 @@ During stabilize, each server first propagates its own InFlightDB along with the
 
 During a network partition, the stabilize command will makes the nodes within a partition consistent. When a connection is made between two servers (which connects two partitions), the servers initially exchange their persistedDBs with each other (which are added to the inFlightDB of the servers) since they will be having different persistedDBs after their previous stabilizes. This ensures that during the next stabilize command, all the servers within the network will become consistent and end up with the same copy of persistedDB.  
  
+#### Killing a server
+Killing a server just sends a kill command to the corresponding server (which will then exit) and also notifies the other servers about the killed server so that they can remove the server from the cluster. Note that kill doesn't notify the clients which were connected to that server about the server being killed.
 
-
-
-
-
+#### Creating or breaking connection
+Creating or breaking connection between two servers notifies both servers about the change while doing the same between a client and a server notifies just the client about the change (since server doens't maintain open connections with clients but vice-versa). 
