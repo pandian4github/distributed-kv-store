@@ -75,4 +75,16 @@ type SendDataPacketsRequest struct {
 	DataPackets StabilizeDataPackets
 }
 
+type SyncStabilizeCheckpointRequest struct {
+	ServerId int
+	StabilizeCheckpoint map[int]int
+}
+
+type SyncStabilizeCheckpointResponse struct {
+	NotInSync bool
+	ServerId int
+	VecTs Clock
+	PersistedDB map[string]Value
+}
+
 type Clock map[int]int

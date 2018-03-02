@@ -30,6 +30,9 @@ var thisServerVecTs = shared.Clock{}
 // Maps serverId to host:basePort of that server
 var otherServers = map[int]string{}
 
+// Maps serverId to its logical clock during its latest stabilize that this server knows about
+var stabilizeCheckpoint = map[int]int{}
+
 // Maintains a map of open connections to the other servers
 //var serverRpcClientMap = map[int]*rpc.Client {}
 
@@ -157,11 +160,52 @@ func (t *ServerMaster) BreakConnection(removeServer *shared.RemoveServerArgs, st
 	return nil
 }
 
+func updateInflightWithPersistedDB(otherPersistedDB map[string]shared.Value) error {
+	numKeysUpdated := 0
+	for k, v := range otherPersistedDB {
+		existingValue, present := Get(k)
+		if !present || util.TotalOrderOfEvents(existingValue.Ts, existingValue.ServerId, v.Ts, v.ServerId) == util.HAPPENED_BEFORE{
+			// If there is not existing value of if existing value happened before the value from the other server, just add it to the inFlightDB
+			inFlightDb[k] = v
+			numKeysUpdated++
+		}
+		// If existing value happened after the value from the other server, ignore it since it will anyways be discarded during stabilize
+	}
+	log.Println(numKeysUpdated, "keys have been updated from the persistedDB of the other server.")
+	return nil
+}
+
+func syncPersistedDBsIfNotInSync(serverId int) error {
+	client, err := getServerRpcClient(serverId)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Syncing PersistedDB with server", serverId)
+	var request = shared.SyncStabilizeCheckpointRequest{ServerId: thisServerId, StabilizeCheckpoint: stabilizeCheckpoint}
+	var response shared.SyncStabilizeCheckpointResponse
+
+	client.Call("ServerServer.SyncStabilizeCheckpoint", request, &response)
+	if response.NotInSync {
+		log.Println("Servers are not in sync. Updating inFlightDB with the other server's PersistedDB..")
+		updateInflightWithPersistedDB(response.PersistedDB)
+		util.UpdateMyClock(&thisServerVecTs, response.VecTs)
+	} else {
+		log.Println("Servers are already in sync.")
+	}
+	client.Close()
+
+	return nil
+}
+
 func (t *ServerMaster) CreateConnection(newServer *shared.NewServerArgs, status *bool) error {
 	serverId := newServer.ServerId
 	hostPortPair := newServer.HostPortPair
 	log.Println("Creating connection between this server", thisServerId, "and server", serverId)
 	otherServers[serverId] = hostPortPair
+
+	syncPersistedDBsIfNotInSync(serverId)
+
 	*status = true
 	return nil
 }
@@ -208,6 +252,7 @@ func collateAndResolveConflicts() error {
 
 func sendMyDataToNeighbors() error {
 	mutex.Lock()
+	stabilizeCheckpoint[thisServerId] = thisServerVecTs[thisServerId]
 	for serverId := range otherServers {
 		if isDataReceivedFrom[serverId] != 1 {
 			isDataReceivedFrom[serverId] = 0
@@ -428,9 +473,11 @@ func (t *ServerServer) BootstrapData(serverId int, response *shared.BootstrapDat
 
 func (t *ServerServer) SendDataPackets(request shared.SendDataPacketsRequest, reply *bool) error {
 	mutex.Lock()
+
 	dataPackets := request.DataPackets
 	for serverId, dataPacket := range dataPackets {
 		log.Println("Received data packet of server", serverId, "from server", request.ServerId, "dataPacket: ", dataPacket)
+		stabilizeCheckpoint[serverId] = dataPacket.VecTs[serverId]
 		if thisServerVecTs[serverId] >= dataPacket.VecTs[serverId] {
 			log.Println("Ignoring data packet of server", serverId, "with ts ", dataPacket.VecTs, "my ts", thisServerVecTs)
 			continue
@@ -464,6 +511,23 @@ func (t *ServerServer) SendDataPackets(request shared.SendDataPacketsRequest, re
 	mutex.Unlock()
 
 	*reply = true
+	return nil
+}
+
+func (t *ServerServer) SyncStabilizeCheckpoint(request shared.SyncStabilizeCheckpointRequest, reply *shared.SyncStabilizeCheckpointResponse) error {
+	mutex.Lock()
+	otherCurrentCheckpoint := request.StabilizeCheckpoint[thisServerId]
+
+	(*reply).ServerId = thisServerId
+	(*reply).VecTs = thisServerVecTs
+	if otherCurrentCheckpoint >= stabilizeCheckpoint[thisServerId] { // the server is already in sync
+		(*reply).NotInSync = false
+		(*reply).PersistedDB = make(map[string]shared.Value)
+	} else {
+		(*reply).NotInSync = true
+		(*reply).PersistedDB = persistedDb
+	}
+	mutex.Unlock()
 	return nil
 }
 
@@ -541,30 +605,33 @@ func (t *ServerClient) ServerPut(putArgs shared.ClientToServerPutArgs, reply *[2
 	return nil
 }
 
-func (t *ServerClient) ServerGet(getArgs shared.ClientToServerGetArgs, reply *shared.ServerToClientGetReply) error {
-	incrementMyServerClock()
-	util.UpdateMyClock(&thisServerVecTs, getArgs.ClientVecTs)
-
-	key := getArgs.Key
-
+func Get(key string) (shared.Value, bool) {
 	value, ok := inFlightDb[key]
 	if ok {
-		reply.Value = value
-		reply.ServerVecTs = thisServerVecTs
-		return nil
+		return value, true
 	}
 
 	value, ok = persistedDb[key]
 	if ok {
-		reply.Value = value
-		reply.ServerVecTs = thisServerVecTs
-		return nil
+		return value, true
 	}
 
-	reply.Value.Val = "ERR_NO_KEY"
-	reply.Value.ServerId = -1
-	reply.Value.ClientId = -1
+	return shared.Value{}, false
+}
+
+func (t *ServerClient) ServerGet(getArgs shared.ClientToServerGetArgs, reply *shared.ServerToClientGetReply) error {
+	incrementMyServerClock()
+	util.UpdateMyClock(&thisServerVecTs, getArgs.ClientVecTs)
+
+	value, found := Get(getArgs.Key)
+	if !found {
+		value.Val = "ERR_NO_KEY"
+		value.ServerId = -1
+		value.ClientId = -1
+	}
+	reply.Value = value
 	reply.ServerVecTs = thisServerVecTs
+
 	return nil
 }
 
