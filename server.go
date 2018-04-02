@@ -211,6 +211,7 @@ func (t *ServerMaster) CreateConnection(newServer *shared.NewServerArgs, status 
 }
 
 func (t *ServerMaster) PrintStore(dummy int, response *map[string]string) error {
+        *response = make(map[string]string)
 	for k, v := range persistedDb {
 		(*response)[k] = v.Val
 	}
